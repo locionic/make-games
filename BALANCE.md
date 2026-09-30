@@ -411,12 +411,42 @@ and the ratio is not.
 ## The gate
 
 A change is kept only if **all** of these hold after the full suite passes
-(`godot --headless --path . --quit -s test.gd`, which must print
-`dice.self_test: OK`, `run.self_test: OK`, `9 scripts load`, `reached end`):
+(`godot --headless --path . --quit -s test.gd`, which must exit **0** and print
+`test.gd: <n> checks passed`; a failure prints
+`=== test.gd: <k> of <n> CHECKS FAILED ===` and exits 1):
 
 1. best/random ratio **strictly widens** vs `1.49x`, and
 2. random win% stays within **8–18%**, and
 3. avg depth does not drop below `7.6`.
+
+> **This gate's own pass condition was three-quarters fiction, checked
+> 2026-09-30.** It used to require the suite to print `dice.self_test: OK`,
+> `run.self_test: OK`, `9 scripts load`, `reached end`. Three of those four
+> strings do not exist and never have for some time: the per-script lines are
+> `dice.self_test: 8392 checks, 0 failed` and `run.self_test: 8469 checks,
+> 0 failed`, and the script count is **11**, not 9. Only `reached end` still
+> appears. So the one place in this document that says what "green" means was
+> describing an older `test.gd`, and a person following it literally would grep
+> for `OK`, find nothing, and have no way to tell a broken suite from a changed
+> output format — which is the exact ambiguity that makes a red build
+> shippable.
+>
+> The fix is deliberately not "correct the three strings". Every one of them is
+> a thing that drifts: the two counts change whenever a check is added, and
+> `9 scripts load` changes whenever a script is. Hardcoding them again would
+> rebuild the same trap one commit later. The condition is now the **exit code**
+> — which `_check.gd:report()` already returns 0/1 on, and which `2b07efd`
+> added deliberately so a broken suite exits non-zero instead of hanging the
+> SceneTree — paired with the one line whose format is stable because it is
+> written by that same function.
+>
+> Same failure class as the Baseline table above, one level up: a second copy
+> of a fact with nothing to propagate it. The stamp that fixed the Baseline is
+> the fix here too — do not hand-maintain a number the program already prints.
+>
+> `--quit` is in the command above and not in PLAN.md's copy of it; both were
+> run and both exit 0 with identical output, so that difference is cosmetic
+> and was left alone rather than tidied.
 
 > **Criterion 1 was left at `2.0x` for four runs after the pool outgrew it,
 > and that is the honest reason this block was stale rather than merely old.**
