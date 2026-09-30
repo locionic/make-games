@@ -645,6 +645,28 @@ func _ergonomics(root: Node, label: String) -> void:
 				"%s: target %d ('%s') does not overlap %d ('%s')"
 				% [label, i, targets[i].text, j, targets[j].text])
 
+	# A target must not sit on top of a solid fill. ColorRects are the game's
+	# opaque blocks -- depth pips, the enemy sigil, bar fills -- so an overlap
+	# here is a button drawn on top of something the player is meant to read.
+	# Found by running it rather than by assuming: the sound toggle is the one
+	# control that shares its corner with the depth strip on every screen, and
+	# the strip's comment claimed that corner was free without ever measuring
+	# it. It is: the pips end at x=369 and the toggle starts at 456, 87px clear,
+	# and that is the worst case, because the strip draws all nine pips including
+	# the wide boss one whatever the depth, and the daily tag adds height rather
+	# than width.
+	var fills: Array[Control] = []
+	for c in root.find_children("*", "ColorRect", true, false):
+		if c is Control and c.is_visible_in_tree():
+			fills.append(c)
+	for t in targets:
+		var tr2 := (t as Control).get_global_rect()
+		for f in fills:
+			var fr := (f as Control).get_global_rect()
+			_check(not tr2.intersects(fr),
+				"%s: '%s' sits on top of a solid fill at %s"
+				% [label, t.text, fr])
+
 	# Said out loud on the way past, so a green run records what it measured
 	# rather than only that it did not object. The numbers are the ones a
 	# hardware pass is then arguing with.

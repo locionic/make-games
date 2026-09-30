@@ -116,9 +116,16 @@ func play_sfx(name: String, vol: float = 0.0) -> void:
 
 ## The sound toggle. Built once on the root rather than per screen, so it
 ## survives every _swap and no screen builder has to know about it. Top-right,
-## because the depth strip's pips are centred and leave roughly 150px of margin
-## at each end -- see the two prior layout regressions in BALANCE.md's sibling
-## notes; this corner is the one place the fight screen does not use.
+## because the depth strip's pips are centred in the top row and leave room for
+## it -- see the two prior layout regressions in BALANCE.md's sibling notes;
+## this corner is the one place the fight screen does not use.
+##
+## The margin there used to be written down as "roughly 150px" and never
+## measured. It is 171px: the pips end at x=369 and this button starts at 456,
+## 87px clear, and that is the worst case rather than the typical one, since
+## the strip draws all nine pips including the wide boss one whatever the depth
+## and the daily tag stacks above the row rather than beside it. `shot.gd --check`
+## now asserts no target sits on a solid fill, which is what would catch it.
 ##
 ## Square, because the offsets and not the minimum set this button's rect, and
 ## the 34 it used to be was the smallest touch target in the game by a factor of
