@@ -114,6 +114,57 @@ func _go() -> void:
 	# signed, versionCode 5 is committed, and eight screenshots are shot against
 	# a roster that a doubling mechanic would re-balance. That is an unrequested
 	# balance change at the end of a release, not a bug fix.
+	#
+	# --- PLAN.md 2.2's other two items, measured with the per-depth line ---
+	#
+	# Paired faces are already shipped -- `Face.pairs` on Fang's `5`,
+	# dice.gd:309, covered by `_pair_tests`. What had never been priced is the
+	# flag, because ADD_DIE is a lottery: `apply_upgrade` draws one of the three
+	# `Encounter.bonus_dice()` at random, so every ADD_DIE row above is the
+	# average of three different dice and cannot say which one is carrying it.
+	# Forcing the draw, 3000 runs a row, the same pick scan throughout:
+	#
+	#   riposte   32.3% wins   91.2 / 88.3 / 98.8 / 97.0   d=5..8
+	#   fang      27.0%         92.0 / 94.3 / 97.7 / 94.0
+	#   spark     16.5%         89.2 / 92.2 / 96.6 / 90.3
+	#   (control, random draw: 25.3%)
+	#
+	# Two things fall out. The paired face PASSES: fang 27.0% against the same
+	# die at 24.0% with the flag cleared, better at every depth from 5 to 8, and
+	# firing 2.77 times a turn rather than never -- which is the gate item 6
+	# failed and item 8 was moved to Fang to pass, now measured rather than
+	# argued. The margin is about a point, so it earns its place and is not
+	# worth building the pool around.
+	#
+	# The bigger one is that the lottery spans 15.8 points. ADD_DIE is the best
+	# card in the table and it is not a card, it is a build: a player who draws
+	# Spark is 15.8 points worse off than one who draws Riposte, with no
+	# information and no choice. The block die wins over both damage dice, and
+	# it wins at the boss (97.0 vs 94.0), which fits everything else measured
+	# here: `bank` is the only policy that survives its own card, and the
+	# BRACE/ARMOR_GROW roster punishes chip.
+	#
+	# Acquired-die armour pierce -- the third item -- was built and measured, and
+	# should not be built. Same scan, rule on vs off:
+	#
+	#   adddie   25.3%  ->  pierce-on   33.6%   (+8.3)
+	#   fang     27.0%  ->  fang-pierce  40.3%   (+13.3)
+	#   riposte  32.3%  ->  riposte-pierce 32.4% (+0.1)
+	#
+	# It is a large buff to the strongest card in the pool, and it pays only on
+	# the draw that was already good: Riposte has no damage faces, so it has no
+	# armour to pierce and gains nothing. It also does not do what it looks
+	# like it was proposed to do. If the point was to make an earned die matter
+	# more, the spread between the best and worst draw goes from 5.3 points to
+	# 7.9, because the good draw gains three times what the bad one does. The
+	# variance is the thing worth fixing and this rule widens it.
+	#
+	# Measured in a sandbox copy of run.gd/dice.gd with two probe-only hooks
+	# (`forced_bonus`, `bonus_pierce`), which is why there are no arms for any
+	# of this above: the hooks live in the rules layer and shipping them to
+	# measure something decided not to ship is a change nobody asked for. The
+	# control arm reproduced the random-draw row to the decimal, so the pairs
+	# are tight.
 
 	print("strategy        wins%   avg depth   max")
 	for row in rows:
