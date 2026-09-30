@@ -417,6 +417,14 @@ func _run() -> void:
 	# the other three dice moved both numbers and failed the gate on a coin
 	# flip, which is not what a regression harness is for: the screenshot
 	# and the arithmetic it teaches both have to be the same run to run.
+	#
+	# "First face that deals nothing" is a no-op on a die that has no such face,
+	# and the pool can hold two: Blade deals 2-9 and Hex 1-6, so neither has one.
+	# It does not bite here only because the staged save's loadout is Blade,
+	# Sunder, Ward, Riposte, and Riposte opens on "fend". Swap that save for one
+	# carrying Hex and the loop stops pinning it, the exact totals above start
+	# failing on a coin flip, and the cause is four lines below where anyone would
+	# look. Check the hand, not the rule, if these two numbers ever go flaky.
 	for i in range(1, plated.enc.dice.size()):
 		var hand: Rules.Die = plated.enc.dice[i]
 		for fi in hand.faces.size():
@@ -561,6 +569,63 @@ func _run() -> void:
 	print("  shake: peak %.2fpx travel, from %s (in flight from the resolve), panel %s (was %s)"
 		% [moved, pre_pos, plated.shake_root.size, pre_size])
 
+	# PLAN.md 3.2 named four numbers to float: damage dealt, damage the plate
+	# ate, block, and status. The first two are asserted above; the block float is
+	# not, for the reason written there; and the fourth had neither a check nor a
+	# note. It is the one number in the list that nothing in the repo would have
+	# noticed disappearing -- `fight.gd:511` could be deleted and every gate
+	# below would still be green.
+	#
+	# It cannot ride along on the fixture above, because exposure needs a face of
+	# EXPOSE_AT (10) and that fixture pins Blade to its 9, which is the highest
+	# Blade can show -- so the branch is unreachable there by construction, not
+	# by luck. Sunder reaches 14. This is therefore a second resolve on the same
+	# panel, and `precision` -- the PRECISE_STRIKE card, the only thing that ever
+	# opens the window (dice.gd:1138) -- is what makes the 10+ mean anything.
+	#
+	# It runs after the grab and after the shake rather than inside the fixture,
+	# because both of those are about *that* resolve, and adding a resolve above
+	# them would change which one they are describing. It cannot disturb the
+	# arithmetic further up either: exposure is set after the damage is paid
+	# (dice.gd:601), so `dealt` and `last_deflected` are untouched -- and they
+	# are not re-read here, this section is after the screenshot on purpose.
+	#
+	# Rolled, then pinned. `Die.roll` assigns `up` itself (dice.gd:113), so a pin
+	# set before the roll is a pin the roll throws away -- and it is also what
+	# clears `spent` and sets `has_rolled`, both of which `_on_end_turn` refuses
+	# to run without. The order is the whole trick and it is the fixture's order,
+	# not a new one.
+	#
+	# Every read below goes through `_new_floats`, and that is not tidiness. The
+	# shake check above samples under `Engine.time_scale = 0.02`, and a float's
+	# 0.95s lifetime is a timer like any other -- so every float raised before it
+	# is still in the tree afterwards, invisible but findable. The first version
+	# of this collected everything on the panel and saw two resolves' worth:
+	# `-5 / 4 deflected / ... / -13 / 8 deflected / ...`. Its "the control
+	# resolve stayed silent" check was therefore satisfied by a stale number, and
+	# so was its non-vacuity guard, which is worse than having neither -- it looked
+	# proved. Even without the shake check a frame here is ~0.3s, which is a third
+	# of a float's life.
+	#
+	# The two resolves are one helper called twice, because the only thing that
+	# may differ between them is the card. The first version pinned the test hand
+	# to the first face that deals nothing and the control to face 0 -- and Blade's
+	# face 0 is a 2 -- so the control was a second experiment, not a control.
+	var seen2 := await _resolve_exposing_hand(plated, true)
+	_check(seen2.find("EXPOSED") != -1,
+		"the status float fires when a 10+ face earns the window (saw: %s, exposed=%d)"
+		% [seen2, plated.enc.enemy.exposed])
+	# And the branch is only worth anything if the card is what opened it. With
+	# `precision` off, Sunder's 14 is just a big number and nothing is named --
+	# which is what makes the line above a check on the status feedback and not
+	# a check that four digits appeared.
+	var seen3 := await _resolve_exposing_hand(plated, false)
+	_check(seen3 != "",
+		"the control resolve did float something, so its silence below is a fact and not a no-op (saw: %s)"
+		% seen3)
+	_check(seen3.find("EXPOSED") == -1 and plated.enc.enemy.exposed == 0,
+		"and without the card the same 14 opens nothing (saw: %s)" % seen3)
+
 	# PLAN.md 4.1, the part of it that runs without a handset. "Touch
 	# ergonomics for the new buttons on small screens" is a claim about
 	# geometry, and every grab above photographs the fight at rest -- which
@@ -597,6 +662,79 @@ func _settle() -> void:
 	for _i in 8:
 		await process_frame
 	await create_timer(0.35).timeout
+
+
+# One exposure experiment, and the float text it produced. `precision` is the
+# only input that varies between the two calls, so the second is a control on the
+# first rather than a second thing being tested.
+func _resolve_exposing_hand(panel, precision: bool) -> String:
+	var snap := _float_snap(panel)
+	panel.enc.precision = precision
+	panel.enc.enemy.exposed = 0
+	panel.enc.enemy.hp = 40
+	# Armour is set for the same reason the fixture sets it: this enemy grows it
+	# on its own turn, and a number that moves between runs of identical code is
+	# one more thing to be surprised by. It does not affect either assertion --
+	# both turn on whether "EXPOSED" is in the string -- but it costs one line.
+	panel.enc.enemy.armor = 4
+	# Rolled before pinned. `Die.roll` assigns `up` itself (dice.gd:113), so a
+	# pin set before the roll is one the roll throws away -- and the roll is also
+	# what clears `spent` and sets `has_rolled`, both of which `_on_end_turn`
+	# refuses to run without. That ordering is the fixture's, not a new one.
+	panel._on_roll()
+	await _settle()
+	for i in panel.enc.dice.size():
+		var d: Rules.Die = panel.enc.dice[i]
+		if i == 1:
+			d.up = 5  ## Sunder's "rend", 14 -- comfortably past EXPOSE_AT
+			continue
+		# The lowest-damage face of its own, ties broken on block. The fixture's
+		# rule is "the first face that deals nothing", which is a silent no-op on
+		# a die that has no such face -- Blade deals 2-9 and Hex 1-6, so neither
+		# has one -- and a die left on its rolled face is where the run-to-run
+		# difference came from when these two resolves were pinned separately.
+		# Lowest *damage* rather than lowest value: Ward is all block, and pinning
+		# it to nothing would empty the `+%d block` float these checks read
+		# alongside `EXPOSED`.
+		var best := 0
+		for fi in d.faces.size():
+			var f := d.faces[fi]
+			var b := d.faces[best]
+			if f.dmg < b.dmg or (f.dmg == b.dmg and f.block < b.block):
+				best = fi
+		d.up = best
+	panel._refresh()
+	await _settle()
+	panel._on_end_turn()
+	# One frame, for the reason given at the fixture: longer and the float is
+	# still in the tree but has faded, which photographs as nothing.
+	await process_frame
+	return _new_floats(snap, panel)
+
+
+# The floats a panel is showing, as instance ids, so that a later read can ask
+# for the ones that arrived since. A float is on a 0.95s timer and a frame in
+# this container is ~0.3s, so "still findable" and "belongs to the resolve I am
+# looking at" are different questions -- and under a slowed `Engine.time_scale`
+# they diverge badly. See the note at the status-float check.
+func _float_snap(panel) -> Dictionary:
+	var ids := {}
+	for f in get_nodes_in_group("float"):
+		if f.get_parent() == panel:
+			ids[f.get_instance_id()] = true
+	return ids
+
+
+# What `snap` did not already contain, as one readable string. Joining with " / "
+# rather than counting is the point: a count is satisfied by one lone block float
+# while the whole turn's feedback is missing, and every assertion here is about
+# which numbers appeared.
+func _new_floats(snap: Dictionary, panel) -> String:
+	var out := ""
+	for f in get_nodes_in_group("float"):
+		if f.get_parent() == panel and not snap.has(f.get_instance_id()):
+			out += (f as Label).text + " / "
+	return out
 
 
 # --- sound ---
