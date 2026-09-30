@@ -326,6 +326,23 @@ you are already playing.
       > only item 7, which was true of `dice.gd` alone and wrong everywhere
       > else: scoping the claim to one file is what hid the other four.
       >
+      > **Those five are five of TEN, and the other five are counted rather
+      > than quietly dropped, because `git log --since=<build> -- game.gd
+      > fight.gd dice.gd run.gd theme.gd main.tscn` returns all ten and stops
+      > you knowing which is which.** The other three are comment-only
+      > rewrites — `20fe68a`, `acf1da9`, `ffc7d87`, at 2, 0 and 0 code lines.
+      > `acf1da9` is the one most likely to be miscounted: its subject reads
+      > "item 7's trigger rate was measured blind" and it touches `dice.gd`, but
+      > its entire diff (`+14/-7`) is `##` prose. Judging by subject, or by
+      > `+N/-M` on a diff that is mostly `##`, is how a note like this drifts —
+      > the count of five is only defensible against a measured split.
+      >
+      > The two commits since (`8fdf773`, `642ed5d`) are 47 non-comment lines
+      > between them and still change nothing a player loads: every one is
+      > inside `RunState.self_test`, and `test.gd:24-25` is its only caller. So
+      > the player-facing gap has stayed at five across both, and measuring is
+      > the only way to know it is still five after the next one.
+      >
       > **The touch-target row is the one that matters for a hardware pass.**
       > The artifact still carries `custom_minimum_size = Vector2(0, 54)`, the
       > size `79de3f5` changed precisely because it "cleared 540dp and failed on
