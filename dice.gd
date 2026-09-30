@@ -60,13 +60,20 @@ class Face:
 	##
 	## Measured, and the prediction was right: `<random>` 16.5% -> 16.4%, depth
 	## 7.69 -> 7.69, every row within 0.5pp and the signs mixed. The reason is
-	## the rate, and it is the number to read before re-tuning the 6. Over 16,098
-	## resolves on the ADD_DIE arm: a Fang is in the pool for 19.1% of fights,
-	## this face comes up on **1.82% of all resolves**, and it beats the 18 it
-	## replaced on **53.9%** of those -- the `armour >= 4` crossover above,
-	## measured rather than assumed. It is live (item 8's pair pays on 0.49%,
-	## so this fires 3.7x more often) and it is still too rare to move a run:
-	## 0.63 damage per appearance times 1.82% is +0.011 damage per resolve. Keep
+	## the rate, and it is the number to read before re-tuning the 6. Over 15,966
+	## resolves on the ADD_DIE arm: a Fang is in the pool for 19.7% of fights,
+	## this face comes up on **2.31% of all resolves**, and it beats the 18 it
+	## replaced on **51.5%** of those -- the `armour >= 4` crossover above,
+	## measured rather than assumed. It is live (item 8's pair pays on 0.70%,
+	## so this fires 3.3x more often) and it is still too rare to move a run:
+	## 0.46 damage per appearance times 2.31% is +0.011 damage per resolve. Keep
+	## Both arms now play the real policy -- reroll the worst die, as
+	## `_balance.gd`'s `_reroll` does. These were first measured blind, with no
+	## `toggle_pick` and no `resolve_rerolls`, and the probe's own control said
+	## so: 10.25% wins on the "ADD_DIE arm" against the Baseline's 24.4% for
+	## that arm. Re-measured, the rate rose to 2.31% and the gain per fire fell
+	## to 0.46, and the product is +0.011 either way -- so the verdict is
+	## unchanged, but it now rests on the arm it names.
 	## this in mind before raising the 6 to make it matter -- a bigger pierce
 	## lands more often without arriving more often, and rate 1 is the ceiling.
 	var pierce: int = 0

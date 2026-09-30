@@ -541,18 +541,31 @@ Strike through and note the verdict when tried.
    got, for the same reason.
    The number that matters more is the trigger rate, because "neutral" and
    "never fires" look identical in a win% table — which is exactly how PLAN
-   0.3's big-hit enemy got built. Over 16,098 resolves on the ADD_DIE arm: a
-   Fang is in the pool for 19.1% of fights, **this face comes up on 1.82% of
-   all resolves**, and it beats the `18` it replaced on **53.9%** of those —
+   0.3's big-hit enemy got built. Over 15,966 resolves on the ADD_DIE arm: a
+   Fang is in the pool for 19.7% of fights, **this face comes up on 2.31% of
+   all resolves**, and it beats the `18` it replaced on **51.5%** of those —
    the `armour >= 4` crossover, measured rather than assumed. It is live: item
-   8's pair pays on 0.49%, so this fires 3.7x more often. It is also too rare
-   to matter: 0.63 damage per appearance times 1.82% is +0.011 damage per
+   8's pair pays on 0.70%, so this fires 3.3x more often. It is also too rare
+   to matter: 0.46 damage per appearance times 2.31% is +0.011 damage per
    resolve, which is the whole explanation for a 0.1pp move.
    **Kept because it is a decision the player can read off the board, not
    because it makes the game better** — it does not, and the honest reason it
    survives is that half the time it is worse and you chose it anyway. Before
    anyone raises the 6 to make it count: a bigger pierce lands more often
-   without arriving more often, and 19.1% of fights is the ceiling.
+   without arriving more often, and 19.7% of fights is the ceiling.
+   > **These four rates were first measured against a blind combat loop and
+   > called "the ADD_DIE arm".** The probe had neither `toggle_pick` nor
+   > `resolve_rerolls`, so it rolled dice and took whatever came up while
+   > filtering only the *rewards* by card — and the tell was in its own output:
+   > the control reported 10.25% wins on "the ADD_DIE arm" against the
+   > Baseline's 24.4% for that arm. Re-measured under the real policy (reroll
+   > the worst die, as `_balance.gd`'s `_reroll` does), the control reads
+   > 25.00% and the rates moved: the face arrives **more** often (2.31% not
+   > 1.82%) and gains **less** per appearance (0.46 not 0.63), for the same
+   > +0.011 per resolve. The verdict stands, and the label is now true. A rate
+   > measured under one policy and attributed to another is the same error as
+   > dividing by the wrong denominator — the arithmetic is fine and the basis
+   > is not.
    **Do not** re-run item 5's version: it is measured, and the numbers are in
    the log.
 8. **~~[x] Re-take item 6 (the paired face) on an acquired die.~~ KEEP
