@@ -65,6 +65,49 @@ func _go() -> void:
 	# damage opening a wound instead of dealing it, which is a per-die toggle in
 	# fight.gd and a real feature rather than a rule. That is not a smaller patch
 	# to this one, so it is not started here.
+	# That version was built, since it is the only way to answer the objection
+	# above, and it was cut too -- for a different reason, and it is the more
+	# interesting of the two. A die spent opening a wound, the wound ignoring
+	# armour, draining in Encounter.BLEED_TURNS instalments. 51 checks in
+	# dice.gd, and it went in green.
+	#
+	# It measured at 30.2% wins and 8.86 depth against the `<random>` row's 16.5%
+	# and 7.69, on the same cards and greedy dice. At 1000 runs that gap is about
+	# 7 standard errors, and 8.86 is deeper than any card row in the table --
+	# one extra button, nearly double the win rate.
+	#
+	# A damage audit was run before believing that, because 7 sigma from one
+	# toggle is the shape of a free lunch rather than a good idea. It is not
+	# free. 300 paired fights, same seed, sundering and not: the surplus is
+	# zero against 0 and 1 armour and rises with it -- +3.3 at 2, +3.8 at 3,
+	# +21.6 at 5. So a wound pays back exactly the face it was opened with, and
+	# every point of the win-rate gap is the armour bypass. The mechanic does
+	# what it was built to do.
+	#
+	# Which is the problem. It is break-even without armour and dominant with
+	# it, and the roster carries armour on seven of nine enemies with two of
+	# them growing into the 12 cap, so the answer is "always sunder" nearly every
+	# turn of nearly every fight. Charging the sundered die its block was the one
+	# cost tried, on the theory that a die spent on wounding is not bracing: the
+	# bench came back at 31.2%, above the 30.2% it was meant to pull down. Not
+	# because the cost is free -- because a policy ranking on both axes picks
+	# better targets. (The damage-only policy could not see the cost at all: it
+	# skips any die with no damage face, so it never once sundered a Ward and
+	# returned 30.2% to the decimal after the rule changed. A policy that cannot
+	# reach a rule is not measuring it.)
+	#
+	# So the cut is not "bleed is a bad idea" -- it is that a mechanic needs a
+	# cost the player can feel, and no cost on the spending turn supplies one.
+	# The cost has to live somewhere the die cannot reach: a wound the enemy can
+	# close, or an armour that tears as it heals, or a bleed that pays the
+	# enemy's attack instead of its health. Each of those is a new enemy
+	# behaviour rather than a new die rule, which is also why this keeps landing
+	# on Phase 0.3's third bullet and not somewhere Phase 3 can polish.
+	#
+	# It also cannot ship into the current build. build/android/dicefate.aab is
+	# signed, versionCode 5 is committed, and eight screenshots are shot against
+	# a roster that a doubling mechanic would re-balance. That is an unrequested
+	# balance change at the end of a release, not a bug fix.
 
 	print("strategy        wins%   avg depth   max")
 	for row in rows:
