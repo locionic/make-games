@@ -223,6 +223,38 @@ you are already playing.
       internally consistent. It is simply the pre-Phase-3 build. **Upload
       `dicefate.aab`.** Re-run `godot --headless --path . -s _pack.gd --
       Android` after any rebuild; it checks the export and boots the pack.
+
+      > **But it is one executable commit behind HEAD (checked 2026-09-30
+      > 15:4x), and the upload should be a decision, not a default.**
+      > `dicefate.aab` was built at **06:54:37**. BALANCE.md's item 7 — the
+      > kept change, and the only edit to `dice.gd` this session that changed
+      > what the game does — landed at **14:42:51** the same day. (A later
+      > commit, `acf1da9`, also touched `dice.gd`, but comments only; the other
+      > two commits since the build do not touch it at all.) The artifact is
+      > **7h48m older than the rules** and does not contain it: item 7 re-cuts
+      > Fang's top face from a
+      > flat `18` to a `15` carrying `pierce 6`. It is measured neutral
+      > (`<random>` 16.5% → 16.4%, every row within 0.5pp), so nothing is
+      > broken by uploading it — but the build and the repo no longer agree,
+      > and this note is the place that fact belongs.
+      >
+      > **Do not silently rebuild under `versionCode` 5.** Play rejects a
+      > second upload reusing a code, *and a rejected upload still counts as
+      > uploaded* — so if 5 was ever submitted, rebuilding in place strands
+      > the next upload. The order is: bump `version/code` past anything ever
+      > submitted, rebuild, then upload. If 5 was never uploaded, rebuilding
+      > it as-is is correct and costs nothing.
+      >
+      > **Method note for whoever re-checks this.** Comparing the two AABs by
+      > size and md5 is the check that works — `dice.gdc` 27,865 vs 9,918,
+      > `fight.gdc` 20,178 vs 15,007, `run.gdc` 14,830 vs 12,074, and 6
+      > scripts vs 5. Do **not** grep the compiled `.gdc` for a known string
+      > to decide what is inside: `"Devourer"` is absent from *both* AABs, and
+      > so is `"pierce 6"` from the newer, so the search returns "absent" for
+      > every needle and proves nothing. An earlier pass in this session
+      > reported "no item-7 markers in the shipped bytecode" from exactly that
+      > method and would have been a confident wrong answer — the control
+      > string is what turned it into a non-answer.
 - [ ] `versionCode` must be strictly higher than any version ever uploaded for
       `com.dicespike.game`, including drafts and rejected uploads. It lives in
       `export_presets.cfg` as `version/code` under the Android preset — **not**
