@@ -162,6 +162,31 @@ and your review text are the *entire* indexable surface, so the genre words live
 here — placed once each, in the opening where they read as prose rather than as
 a list. Repetition is a violation risk, so they are not used twice.
 
+Two claims in this block were corrected on 2026-09-30, both after measuring the
+code rather than after reading it, and both are now pinned in `run.gd`'s
+`self_test` so they cannot drift back.
+
+**"Every player gets the same dice and the same enemies on the same day" was
+half wrong.** The daily seeds exactly one thing per run — `game.gd:_start`
+seeds the global rng off the day, and `Run._init` shuffles `order` from it — so
+two players on one day fight the same nine in the same order. The *hand* is
+never seeded: it is the player's own pool, and the rolls come from a separate
+rng that `fight.gd` randomises on every fight. The obvious guess is that a
+veteran's bonus dice make their daily a different fight, and that guess is
+wrong for a more interesting reason: `set_loadout` trims to `POOL_SIZE` taking
+the library first, so a player on their fourth run rolls the same four starters
+as a fresh install. Only a hand *chosen* at the title screen changes it. The
+block now says "The dice are the ones you brought."
+
+**"Every finished run unlocks another die" stopped being true from the fourth
+run on.** `record_run` increments `unlocked` with `mini(..., 3)` and
+`bonus_dice()` holds exactly three, so the fourth finished run unlocks nothing.
+`game.gd` had always said so correctly ("the four starters plus the three a
+finished run unlocks"); only the store copy dropped the qualifier. Note that
+the test pinning this needed a *fourth* `record_run` to fail against an
+uncapped build — three runs leave the counter at 3 either way, so a check
+placed at the third is a check that cannot fail.
+
 ```
 Nine fights stand between you and The Devourer. You bring four dice.
 
@@ -209,15 +234,16 @@ is armoured and enraged and it has 78 health.
 
 A daily run
 
-Every player gets the same dice and the same enemies on the same day. There is
-nothing to grind toward and nothing to buy — just the same fight everyone else
-is having, and a result worth comparing.
+Every player gets the same nine enemies, in the same order, on the same day.
+The dice are the ones you brought. There is nothing to grind toward and nothing
+to buy — just the same fight everyone else is having, and a result worth
+comparing.
 
 Your best run is saved
 
-Depth reached, runs played, victories kept. Every finished run unlocks another
-die, so the next one starts with a fuller hand. The run ends when your health
-does.
+Depth reached, runs played, victories kept. Your first three finished runs each
+unlock a die, so the next one starts with a fuller hand — past four, the only
+way wider is a New Die taken between fights. The run ends when your health does.
 
 One thumb, no menu
 

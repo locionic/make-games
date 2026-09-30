@@ -481,6 +481,47 @@ static func self_test() -> void:
 	Check.check(daily_a.share_text(3, false).contains("daily #12345"), "a daily says so")
 	Check.check(new().share_text(3, false).contains("free run"), "a free run says so")
 
+	# What a daily fixes, and what it does not. The enemy order is seeded, so
+	# two players on one day fight the same nine in the same order. The HAND is
+	# not seeded -- it is the player's own pool -- and that distinction is the
+	# whole of it, so it is pinned here. play/LISTING.md sold the daily as "the
+	# same dice and the same enemies"; only the second half is true, and it is
+	# true of a hand nobody has touched, not of one picked at the title screen.
+	var stocked := new(12345)
+	var picked := new(12345)
+	picked.set_loadout(["Spark", "Fang", "Riposte", "Blade"])
+	Check.check(stocked.order == picked.order,
+		"two players pick their own dice and still fight the same daily")
+	var stocked_titles: Array = []
+	var picked_titles: Array = []
+	for d in stocked.dice:
+		stocked_titles.append(d.title)
+	for d in picked.dice:
+		picked_titles.append(d.title)
+	Check.check(stocked_titles != picked_titles,
+		"but a hand chosen at the title screen is a different set of dice that day")
+
+	# The surprising half, and the reason the copy is only half wrong: owning
+	# bonus dice does NOT change the default hand. `set_loadout` trims to
+	# POOL_SIZE library-first, so a player on their fourth run rolls the same
+	# four starters as a fresh install. Both ends are pinned below, because
+	# "the hand is unaffected by unlocks" is not true of an arbitrary change
+	# here -- bonus-first would hand every veteran a different daily.
+	var was_path := SAVE_PATH
+	SAVE_PATH = "user://self-test-daily.json"
+	for case in [[0, "no bonus dice owned"], [3, "every bonus die owned"]]:
+		var cf := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+		cf.store_string(JSON.stringify({"unlocked": int(case[0])}))
+		cf.close()
+		var titles: Array = []
+		for d in new(12345).dice:
+			titles.append(d.title)
+		Check.check(titles == ["Blade", "Sunder", "Ward", "Hex"],
+			"the unchosen daily hand is the four starters with %s (got %s)"
+			% [case[1], titles])
+	SAVE_PATH = was_path
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://self-test-daily.json"))
+
 	# start_fight carries the run's stats into the encounter.
 	var f0 := r.start_fight()
 	Check.check(f0.enemy.title == "Grunt")
@@ -608,6 +649,18 @@ static func self_test() -> void:
 	var owned := owned_dice().size()
 	Check.check(owned >= 5, "a bonus die is owned after a run")
 	Check.check(owned <= 7, "never more than the three bonus dice")
+	# The cap is three, so "a finished run unlocks another die" stops being
+	# true from the fourth one on. Pinned because the store description said it
+	# without the qualifier; only `bonus_dice().size()` ever bounded it before.
+	# This needs a FOURTH record_run to mean anything: three runs leave the
+	# counter at 3 whether the cap exists or not, so a check placed here would
+	# pass on a build with no cap at all -- the one sort of check that is worse
+	# than none, because it looks like the cap is covered.
+	record_run(1, false)
+	Check.check(int(load_stats()["unlocked"]) == 3,
+		"a fourth finished run unlocks nothing -- the count is still 3")
+	Check.check(Rules.Encounter.bonus_dice().size() == 3,
+		"and there are only three to unlock in the first place")
 	var hand := new()
 	hand.set_loadout(["Blade", "NotADie", "AlsoFake"])
 	Check.check(hand.dice.size() == POOL_SIZE, "a bad loadout still fills the hand")
