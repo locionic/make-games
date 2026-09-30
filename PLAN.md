@@ -266,6 +266,29 @@ done
 > `TOUCH_MIN` in `shot.gd`, which is right about it — 320 is Play's screenshot
 > floor, not a screen width anyone holds.
 
+> **Gate 5 exists and is not in this list, which is the point of it.** Every gate
+> above runs from source. `_pack.gd` is the only one that runs from an *exported
+> pack*, and so the only one that can see the export filter in
+> `export_presets.cfg` dropping a file — which is not hypothetical: the Android
+> preset excludes `_*.gd`, and `dice.gd` and `run.gd` both `preload`
+> `_check.gd`, so a filter matching that glob once took the whole rules layer
+> out of the build. A gate 1 that is green says the code is correct on disk. It
+> says nothing about what reached the player's phone, and every one of gates
+> 1–4 would stay green through exactly that failure.
+>
+> ```bash
+> godot --headless --path . -s _pack.gd -- Android
+> ```
+>
+> It is safe to run at any time, which is worth saying because it does not look
+> it: `--export-pack` invites the reading that it writes into `build/`, and it
+> does not. `PROBE` is `/tmp/_pack_probe.pck` (`_pack.gd:43`) and the child is
+> booted with `--main-pack` from `/tmp`, so it overwrites no gitignored artifact
+> and nothing that cannot be regenerated. `play/LISTING.md` tells the releaser
+> to run it after a rebuild; that is the right advice in the wrong place — it
+> belongs in the gate loop, before the build, not in a release checklist after
+> one.
+
 To re-shoot the Play listing (overwrites `play/screenshots/`):
 ```bash
 xvfb-run -a godot --path . --rendering-driver opengl3 -s shot.gd
