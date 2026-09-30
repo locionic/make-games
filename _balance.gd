@@ -8,6 +8,12 @@ extends SceneTree
 const RunState = preload("res://run.gd")
 const Rules = preload("res://dice.gd")
 const N := 1000
+## Buckets for the per-depth survival line below. A run records the depth it
+## stopped at, which is depth+1, and the boss bucket holds both wins and
+## boss-deaths -- so slot FINAL_DEPTH+1 is "got to the last fight" and is not
+## a win count. The wins% column is the honest one; this is the honest
+## condition.
+const SLOTS := RunState.FINAL_DEPTH + 2
 
 
 func _init() -> void:
@@ -116,6 +122,11 @@ func _go() -> void:
 		var wins := 0
 		var depth_sum := 0.0
 		var depth_max := 0
+		# How many runs stopped at each depth. resize() fills with null, which
+		# is a Nil on the first increment, so the array is built by hand.
+		var hist: Array = []
+		for _i in SLOTS:
+			hist.append(0)
 		for i in N:
 			var rng := RandomNumberGenerator.new()
 			rng.seed = 7000 + i
@@ -149,6 +160,7 @@ func _go() -> void:
 				var reached: int = r.depth + 1
 				assert(reached <= RunState.FINAL_DEPTH + 1, "a run cannot pass depth 9")
 				run_end = reached  ## how far this run got, counted once
+				hist[mini(run_end, SLOTS - 1)] += 1
 				if not enc.won:
 					break
 				if r.at_boss():
@@ -173,9 +185,33 @@ func _go() -> void:
 			depth_sum += run_end
 			depth_max = maxi(depth_max, run_end)
 		print("%-14s %5.1f%%   %6.2f   %3d" % [row[0], 100.0 * wins / N, depth_sum / N, depth_max])
+		# Per-depth survival, conditioned on having reached that depth. This is
+		# the column that can actually see a card, and the reason is the bind
+		# between upgrades and depth: a run takes one card per depth cleared
+		# and stops at the first death, so its upgrade count IS depth-1,
+		# identically, for every run. A wins% gap between two rows is therefore
+		# equally a depth gap, and a card that did not get you further reads as
+		# a card that did no good. Conditioning on the depth both rows reached
+		# holds the build size fixed and leaves only what the card did.
+		#
+		# Measured on the FOCUS row, which is the clearest case: at wins% it
+		# read 8.9% against a 16.5% control and looked broken. Per-depth it is
+		# level with the control until d=4 and then sits 5 points below at d=5
+		# and d=6 -- the card is real, it is just not worth a pick twice.
+		var line := ""
+		for d in range(1, SLOTS - 1):
+			if hist[d] > 0:
+				line += "%5.1f%%" % (100.0 * hist[d + 1] / hist[d])
+			else:
+				line += "   --  "
+		print("               %s" % line)
 	print("a gap of a few points between the best and random row is the card's edge")
 	print("compare `dice:*` against `<random>` -- same cards, so that gap is the")
 	print("die policy reading the enemy and not the reward pool")
+	print("the unlabelled row under each is survive(d) for d=1..%d. Read THAT"
+		% (SLOTS - 2))
+	print("line, not wins%: upgrades and depth are the same number here, so wins%")
+	print("cannot separate a weak card from a build that simply went further")
 	quit()
 
 
