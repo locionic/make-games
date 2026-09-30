@@ -27,8 +27,23 @@ FlowMusic2API on 2026-09-29 with the `lyria-fast` and `lyria` models:
 
 | file | source | size | plays on |
 |---|---|---|---|
-| `audio/menu.ogg` | 177s m4a, cut and crossfaded to 40s | 527 KB | title, reward, run over |
-| `audio/combat.ogg` | 176s m4a, cut and crossfaded to 40s | 549 KB | the fight panel |
+| `audio/menu.ogg` | 177s m4a, cut and crossfaded to 40s | 527 KiB (539,931 B) | title, reward, run over |
+| `audio/combat.ogg` | 176s m4a, cut and crossfaded to 40s | 549 KiB (561,899 B) | the fight panel |
+
+Both sizes are KiB and are written out in bytes beside it, because the same
+table two sections down writes "45 KiB (46,338 bytes)" and a bare "527 KB" beside
+a bare "527 KiB" is a 2.4% disagreement that reads as drift — someone checking
+539,931 bytes against "527 KB" computes 540 KB and concludes the audio had been
+replaced. It has not: measured 2026-09-30 at exactly the figures above, and the
+nine `.oggvorbisstr` blobs in both AABs are byte-identical at 1,188,787 bytes
+total, which is PLAN.md 4.1's number and still true.
+
+The sizes are deliberately **not** asserted. Regenerating the audio through
+`POST /v1/audio/generations` is a documented, legitimate action, and every
+regeneration produces a different file size — so a size check would be red the
+first time anyone followed the instructions two paragraphs above. The duration
+gate already catches the failure that actually loses a sound: a file that was
+replaced or truncated.
 
 Both were verified with `ffprobe`, not by ear: this machine's only audio driver
 is the dummy one, so **listening is not possible here.** The loop seam was
