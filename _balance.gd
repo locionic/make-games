@@ -14,6 +14,73 @@ const N := 1000
 ## a win count. The wins% column is the honest one; this is the honest
 ## condition.
 const SLOTS := RunState.FINAL_DEPTH + 2
+## PLAN.md 1.2's second bullet -- "every card offered must support a distinct axis
+## (Variance/Gamble vs. Focus/Certainty vs. Banking/Stalling)" -- has no code
+## behind it. `roll_rewards` draws three cards uniformly at random, so whether
+## those three span three different axes is left to chance, and this map is the
+## only place that says which axis a card is on.
+##
+## It is a judgement call and worth arguing with: the plan names three axes and
+## maps no card to them, so the five below are mine, drawn from what each card
+## actually does. "Focus/Certainty" is the plan's own catch-all and it absorbs
+## all nine non-variance, non-stalling cards, which is why the plan's three
+## axes cannot be satisfied three times over and the measurement below is run
+## on the five instead.
+const AXIS := {
+	"ADD_DIE": "pool",          ## grows the hand -- its own thing, neither of these
+	"SHARPEN": "damage",         ## +1 to a damage face
+	"PIERCE": "damage",          ## ignores 1 armour
+	"REFORGE": "damage",        ## raises the weakest face
+	"PRECISE_STRIKE": "damage",  ## a 10+ hit applies Exposed
+	"BLESS": "defence",          ## +1 to a block face
+	"VIGOR": "defence",          ## +8 max health
+	"MEND": "defence",           ## heal 14
+	"BULWARK": "defence",        ## reflect 4
+	"FOCUS": "gamble",           ## +1 re-roll every turn
+	"GAMBLERS_RUSH": "gamble",   ## a re-roll that lands higher pays extra
+	"BASTION_HOLD": "stall",     ## holding a die pays block at once
+}
+
+# PLAN.md 1.2's second bullet, measured over the 8000 offers a run that clears
+# all eight depths actually sees (the offer sequence depends only on the picks,
+# not on the fights, so walking it is exact rather than an approximation):
+#
+#   45.8% of offers span three distinct axes, 54.2% carry a repeat,
+#   and the repeats are damage 2011 / defence 1971 / gamble 357. Those three
+#   sum to 4339 exactly, which is the check that the counter is honest: with
+#   three cards an axis can repeat at most once and only one axis can, so the
+#   three counts must add to the number of offending offers. They do.
+#
+# So the rule is a coin flip that nothing enforces: `roll_rewards` draws three
+# uniformly at random and whether they span three axes is left to chance. It is
+# also unsatisfiable as written. Under the plan's own three axes, "Variance/
+# Gamble" holds FOCUS and GAMBLERS_RUSH, "Banking/Stalling" holds BASTION_HOLD,
+# and "Focus/Certainty" absorbs the other nine -- a 2/1/9 partition, and since
+# there is only one way to take all three, P(span) = 9*2*1 / C(12,3) = 8.2%. The
+# plan's rule would then hold in one offer in twelve, where the five-way map
+# above holds in nearly half, and that map is what makes the number mean
+# anything rather than being a fact about an arbitrary grouping.
+#
+# Which is the argument for NOT enforcing it, and the reason is in the table
+# above rather than in a preference. A repeated-axis offer is still a real
+# choice, because cards on the same axis are not interchangeable: the damage
+# axis spans 8.3% (REFORGE) to 19.5% (PRECISE_STRIKE), an 11.2-point spread
+# that is wider than the gap between most pairs of cards on different axes.
+# Defence spans 5.2 and gamble 0.5. Forcing three distinct axes would delete
+# exactly those choices -- 54.2% of the time it would take an offer containing
+# PRECISE_STRIKE against REFORGE, a real 11-point decision, and hand back one
+# with nothing in it.
+#
+# The rule worth having instead is a dominance rule: no card on offer may be
+# strictly worse than another card on offer, so every card the player sees is
+# takeable. That is BALANCE.md's "no dead-weight / strictly dominated" and it
+# is the right shape for a draft. It cannot be checked from this table, and
+# that is the honest limit of this measurement: wins% is a mean over runs, so
+# it can rank cards but it can never show that one is *never* better than
+# another. Strict dominance needs a paired per-fight comparison, which is what
+# the forced-draw arms above are built for and what the ADD_DIE lottery was
+# measured with. Not attempted here: it is a check, not a change, but it wants
+# its own bench rather than a corner of this one.
 
 
 func _init() -> void:
@@ -237,6 +304,8 @@ func _go() -> void:
 	# control arm reproduced the random-draw row to the decimal, so the pairs
 	# are tight.
 
+	_axis_report()
+
 	print("strategy        wins%   avg depth   max")
 	for row in rows:
 		var id: String = row[1]
@@ -355,6 +424,53 @@ func _go() -> void:
 	print("line, not wins%: upgrades and depth are the same number here, so wins%")
 	print("cannot separate a weak card from a build that simply went further")
 	quit()
+
+
+## PLAN.md 1.2's second bullet, measured: how often do the three cards on offer
+## actually span three different axes?
+##
+## The offer sequence is walked directly rather than played. `roll_rewards` reads
+## only `dice.size()` and `upgrades`, and a run takes one card per depth cleared
+## and stops at the first death, so the sequence of offers a run sees is fixed
+## by its picks alone -- there is no fight to simulate and nothing about the dice
+## changes the draw. The pick policy is the control's, `offer[0]`, so the pool
+## shrinks the same way the `<random>` row above shrinks it.
+func _axis_report() -> void:
+	var offers := 0
+	var clean := 0
+	var dup_of := {}
+	var seen_axis := {}
+	for a in AXIS.values():
+		seen_axis[a] = 0
+	for u in RunState.UPGRADES:
+		seen_axis[str(AXIS[str(u["id"])])] += 1
+	for i in N:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7000 + i
+		var r := RunState.new()
+		for depth in RunState.FINAL_DEPTH:
+			var offer: Array = r.roll_rewards(rng)
+			if offer.is_empty():
+				continue
+			offers += 1
+			var axes := {}
+			for o in offer:
+				var a := str(AXIS[str(o["id"])])
+				axes[a] = int(axes.get(a, 0)) + 1
+			if axes.size() == offer.size():
+				clean += 1
+			for a in axes:
+				if int(axes[a]) > 1:
+					dup_of[a] = int(dup_of.get(a, 0)) + 1
+			r.apply_upgrade(str(offer[0]["id"]), rng)
+	print("PLAN.md 1.2 -- do the three offers span three axes?")
+	print("  pool axes: %s" % seen_axis)
+	print("  %d offers: %d span three distinct axes (%.1f%%), %d carry a repeat (%.1f%%)" % [
+		offers, clean, 100.0 * clean / offers, offers - clean, 100.0 * (offers - clean) / offers])
+	var parts := PackedStringArray()
+	for a in dup_of:
+		parts.append("%s %d" % [a, dup_of[a]])
+	print("  repeats by axis: %s" % ", ".join(parts))
 
 
 ## Which die this policy wants re-rolled. Greedy is "re-roll the worst face",
