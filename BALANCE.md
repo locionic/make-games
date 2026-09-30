@@ -633,14 +633,14 @@ Strike through and note the verdict when tried.
 > row is what says the mechanic itself is fine, so this is a statement about the
 > card, not about Focus.
 >
-> **The `dice:nudge` half of that does not carry its weight uncaveated, and I left
-> it that way.** `nudge` is one of the policies I wrote (1116, 1201), and it always
-> spends — see the correction under **CUT** below, which carries the measured
-> reason. The conclusion here survives anyway, because it rests on the controlled
-> comparison rather than on the policy's score: the card lost to its own control
-> by 7.7 standard errors on depth, under a hand that was the same on both sides.
-> **Drop the second half of the sentence and the argument still says what it
-> needs to.**
+> **The `dice:nudge` half of that does not carry its weight uncaveated, and I
+> left it that way.** `nudge` is one of the policies I wrote (1116, and restated
+> later), and it always spends — see the correction under **CUT** below, which
+> carries the measured reason. The conclusion survives anyway, because it rests
+> on the controlled comparison rather than on the policy's score: the card lost
+> to its own control by 7.7 standard errors on depth, under a hand that was the
+> same on both sides. **Drop the second half of the sentence and the argument
+> still says what it needs to.**
 >
 > **What I should have done before building anything** was `git log -S
 > "DISCIPLINED_MIND"`, which answers "has this been tried" in one command. The
@@ -1044,8 +1044,8 @@ and bounded, so the card taxes the plentiful currency to buy the scarce one.
 > it reads, because the policy cannot express the mechanic's best use.
 > `_spend_all_focus` spends every charge on the biggest immediate gain, and
 > `focus_left` **carries across turns**: `roll_all` refills `rerolls_left` and
-> leaves focus alone (`dice.gd`, and the test at line 1048 asserts it — "a roll
-> does not refill the focus charges"). A run grants it once at `run.gd:146`, so
+> leaves focus alone — `dice.gd:892` asserts it outright ("a roll does not refill
+> the focus charges"). A run grants it once at `run.gd:146`, so
 > with `base_focus = 1` a player may hold the single charge for the turn the hit
 > is worth saving it for. The Devourer is the clean case: `run.gd:136` gives it
 > `atk 9` and `BEH_ENRAGE`, which is `+1` a turn (`dice.gd:154`), so its fourth
