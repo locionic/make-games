@@ -451,16 +451,17 @@ A change is kept only if **all** of these hold after the full suite passes
 > **Criterion 1 was left at `2.0x` for four runs after the pool outgrew it,
 > and that is the honest reason this block was stale rather than merely old.**
 > On the twelve-card pool a 2.0x ratio needs the best card at **33.0%** with
-> random at 16.5%. The best card in the table measures 24.5% and the best row
+> random at 16.5%. The best card in the table measures 24.4% and the best row
 > in the whole bench — `dice:nudge`, which is a die policy and not a card at
-> all — measures 25.0%. So criterion 1 as it stood could not be passed by any
+> all — measures 25.4%. So criterion 1 as it stood could not be passed by any
 > configuration of the shipped game; every run against it failed for a reason
 > that had nothing to do with the change under test, and the failures were
 > being read as evidence about cards.
 >
 > The threshold is re-anchored to `1.48x` because that is the best/random the
-> current pool actually produces, and a comparison has to be against something
-> reachable to mean anything. It is deliberately *not* re-anchored to "whatever
+> pool produced at the time — `24.5/16.5 = 1.4848` — and a comparison has to be
+> against something reachable to mean anything. It is deliberately *not*
+> re-anchored to "whatever
 > the last run scored" — that would make the gate unfailable by a card that does
 > nothing. This is a change to what passing means, so it is stated here rather
 > than buried: **a card now passes criterion 1 by beating 1.49x, which today
