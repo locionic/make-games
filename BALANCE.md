@@ -166,6 +166,67 @@ This amendment did **not** rescue either result above. Both were reverted under
 the gate as it stood when they were measured; the gate was changed afterwards,
 so no future run can use it to justify a result it already has.
 
+### Damage over time has no window to occupy (measured 2026-09-30)
+
+**PLAN 0.3's third status — "Sundered / Bleed: damage dealt over time, allowing
+slow defensive builds to win" — is not buildable as specified, and the reason is
+`dice.gd:602`, not the card pool.** This is the second PLAN 0.3 bullet to close
+and the two died for unrelated reasons, which is worth knowing: 0.3's "enemy
+that counters on rolls > 10" died in the bottom-heavy face lists (no die but
+Sunder can reach 10, and 2 of 24 faces can), and this one dies in the damage
+model.
+
+The premise the design rests on is that there is slack to convert — damage the
+player has already paid for and the game throws away, which a defensive build
+could bank instead of losing. **That slack is real and it is enormous. None of
+it is reachable.**
+
+Over 4,620 fights on 600 seeds, with the HP clamp lifted in a sandbox copy so
+the discarded damage is observable at all:
+
+| | |
+|---|---|
+| true damage dealt | 66,112 |
+| damage that removed HP | 34,712 |
+| **damage discarded past zero** | **31,400 — 47.5% of everything dealt** |
+| fights whose killing blow overshot | 3,432 of 4,620 — 74.3% |
+
+Half of every point of damage in this game is deleted at
+`if enemy.hp <= 0: enemy.hp = 0`. (The un-clamped sandbox reproduces the
+shipped rules exactly — 600 runs, 4,620 fights, 111 wins either way — so this is
+the shipped game's own waste, not an artefact of measuring it.)
+
+And then the reason none of it can be banked, which is definitional rather than
+statistical and is why no sample size would have found it: **a resolve can only
+overshoot by driving HP to or past zero, and a resolve that does that is the
+killing blow.** The fight ends that resolve. All 31,400 sits on the blow that
+ends the fight, and non-killing resolves produce exactly zero excess by
+construction — not "rarely", *zero*, in 4,620 fights.
+
+That kills both versions a DoT could have taken:
+
+- **Harvest the excess.** Impossible: the excess exists only on the blow that
+  ends the fight, so there is no post-zero window for time-based damage to
+  occupy. This was the design, and the 47.5% is why it looked right.
+- **Re-time the same damage instead.** A tax for rushing and a nothing for
+  everyone else, since a deck that kills in 2–3 turns never collects a tick.
+  Fights last a mean of 5.20 resolves and only 18.9% are still running after
+  five, so the delivery window is narrow as well as the surplus being unusable.
+- **Add damage.** Then it is a plain damage increase. Random measures ~16%
+  against a band topping out at 18, so there is about 1.5–2.4 points of room
+  upward before criterion 2 fails outright — a DoT sized to be worth having
+  does not fit in it.
+
+**Do not retry** without first changing `dice.gd:602` so the fight does not end
+at zero — let the enemy carry a wound that takes a turn to close, or let bleed
+apply before the death check. That is a real design and it is a bigger change
+than a status effect, because it moves where the game's difficulty is set: as
+measured here, difficulty is set almost entirely by **turn count**, not by damage
+totals, which is why the two `ARMOR_GROW` enemies are the grind of the roster
+(Rust Golem 13.2 resolves, Stone Sentinel 10.5) and the other seven die in about
+three. A mechanic that lengthens fights is a much bigger lever on this game than
+one that adds damage.
+
 ## Baseline — measured, not remembered
 
 `godot --headless --path . --quit -s _balance.gd`, 1000 runs per strategy,
