@@ -88,14 +88,20 @@ func play_sfx(name: String, vol: float = 0.0) -> void:
 ## because the depth strip's pips are centred and leave roughly 150px of margin
 ## at each end -- see the two prior layout regressions in BALANCE.md's sibling
 ## notes; this corner is the one place the fight screen does not use.
+##
+## Square, because the offsets and not the minimum set this button's rect, and
+## the 34 it used to be was the smallest touch target in the game by a factor of
+## two -- 34dp against Material's 48dp floor even at the width the canvas is
+## authored at, 23dp on a 360dp phone. `shot.gd --check --at N` is what caught
+## it, and what `T.TOUCH_H` means by every other tappable here.
 func _build_mute() -> Button:
 	var b := Button.new()
 	b.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	b.custom_minimum_size = Vector2(64, 34)
-	b.offset_left = -74
+	b.custom_minimum_size = Vector2(T.TOUCH_H, T.TOUCH_H)
+	b.offset_left = -10 - T.TOUCH_H
 	b.offset_top = 10
 	b.offset_right = -10
-	b.offset_bottom = 44
+	b.offset_bottom = 10 + T.TOUCH_H
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_size_override("font_size", T.F_TINY)
 	b.pressed.connect(_on_mute_pressed)

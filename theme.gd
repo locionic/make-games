@@ -100,11 +100,29 @@ static func _style_button(t: Theme, state: String, fill: Color, border: Color, f
 	t.set_color("font_color" if state != "disabled" else "font_disabled_color", "Button", font)
 
 
+## Height of every tappable in the game, in canvas units.
+##
+## One number, because it was four: the fight row was 74, the title's primary
+## 62, its secondary 54, and the sound toggle 34, and nothing kept them in step
+## because nothing measured them. `shot.gd --check --at N` does now, and the
+## numbers it produced are the reason this exists: on a 411dp phone those were
+## 56, 47, 41 and 26 dp against Material's 48dp floor, so three of the four
+## failed on a mainstream handset and the sound toggle failed at every width
+## including the 540 the canvas is authored at.
+##
+## The canvas is 540 wide and never shrinks -- `canvas_items` + `expand` scales
+## the whole thing to the window -- so a unit is one dp only on a 540dp phone.
+## 74 is sized off a number that means something rather than off the floor: it
+## is 56dp on a 411dp phone, the *comfortable* target Material asks for, and
+## that clears 48dp at 360dp too. `shot.gd --check` is what checks it.
+const TOUCH_H := 74
+
+
 ## Gold fill with dark text -- the "start run" / "confirm" button.
 static func primary_button(text: String = "Tap to play") -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(0, 62)
+	b.custom_minimum_size = Vector2(0, TOUCH_H)
 	b.add_theme_font_size_override("font_size", F_TITLE)
 	b.add_theme_color_override("font_color", BG)
 	b.add_theme_color_override("font_hover_color", BG)
@@ -121,7 +139,7 @@ static func primary_button(text: String = "Tap to play") -> Button:
 static func secondary_button(text: String, accent: Color = GOLD) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(0, 54)
+	b.custom_minimum_size = Vector2(0, TOUCH_H)
 	b.add_theme_font_size_override("font_size", F_BODY)
 	b.add_theme_color_override("font_color", accent)
 	b.add_theme_color_override("font_hover_color", TEXT)

@@ -82,6 +82,7 @@ func _run() -> void:
 	RunState.record_run(4, false)
 	game.show_title()
 	await _settle()
+	_ergonomics(game, "title")
 	_grab(1, "title-pick-your-hand")
 
 	# Swap a die in and out. The hand starts full, so the first tap frees a slot
@@ -313,6 +314,7 @@ func _run() -> void:
 				"'%s' fits inside its card horizontally" % l.text)
 			_check(lr.position.y >= box.position.y and lr.end.y <= box.end.y,
 				"'%s' fits inside its card vertically" % l.text)
+	_ergonomics(game, "reward")
 	_grab(5, "reward-pick-one")
 
 	for id in ["ADD_DIE", "FOCUS", "VIGOR"]:
@@ -320,6 +322,7 @@ func _run() -> void:
 	game.run.depth = 5
 	game.show_end(false, true)
 	await _settle()
+	_ergonomics(game, "run over")
 	_grab(6, "run-over")
 
 	# The share button's whole job is the confirmation, so catch it lit up.
@@ -472,7 +475,7 @@ func _run() -> void:
 	# assumed"). It was not. Nothing in the repo asserted a touch target
 	# until now -- `_rects.gd` reasons about the six-dice tight case in a
 	# comment and then only dumps rects for a human to read.
-	_ergonomics(plated, "four-dice hand")
+	_ergonomics(game, "four-dice hand")
 
 	# The tight case, and the last thing this file does. Six dice is where
 	# the cards are narrowest, so it is the only hand where a tap target can
@@ -482,7 +485,7 @@ func _run() -> void:
 	game.run.apply_upgrade("ADD_DIE", game.rng)
 	game.show_fight()
 	await _settle()
-	_ergonomics(game.fight_panel, "six-dice hand")
+	_ergonomics(game, "six-dice hand")
 
 	if had_save:
 		DirAccess.copy_absolute(BACKUP, SAVE)
@@ -587,7 +590,7 @@ func _check(cond: bool, msg: String) -> void:
 
 
 
-## Every tappable thing on the fight screen, read off the laid-out rects.
+## Every tappable thing on a screen, read off the laid-out rects.
 ##
 ## Three claims, and none of them is "the button exists" -- a screenshot has
 ## that already covered eight times over. A target is *big enough*, a label
@@ -599,17 +602,23 @@ func _check(cond: bool, msg: String) -> void:
 ## wide does this control want to be", so comparing it against what the
 ## container actually granted catches a squeeze the moment it happens rather
 ## than when someone squints at a PNG.
-func _ergonomics(panel, label: String) -> void:
-	var vp: Vector2 = panel.get_viewport_rect().size
+##
+## This walks the tree rather than taking a panel, and that is not tidiness.
+## Given a panel it could only ever see the fight screen's five buttons and
+## its dice, so it called itself a check on touch ergonomics while the mute
+## button sat at 34 units tall -- under the 48dp floor at *every* width,
+## including the one the canvas is authored at -- and the title and reward
+## screens were never looked at. Cards are Buttons already, so walking covers
+## them too and the separate card loop went away with the panel.
+func _ergonomics(root: Node, label: String) -> void:
+	var vp: Vector2 = root.get_viewport_rect().size
+	var targets: Array[Button] = []
+	_collect(root, targets)
 	# The narrowest and shortest thing a finger has to land on, measured rather
 	# than assumed. Printed at the end, because this is the number a hardware
 	# pass is arguing with and it is not otherwise recorded anywhere.
 	var smallest := Vector2(INF, INF)
-	var buttons: Array = [
-		panel.roll_btn, panel.focus_btn, panel.bank_btn,
-		panel.reroll_btn, panel.end_btn,
-	]
-	for b in buttons:
+	for b in targets:
 		var c := b as Control
 		smallest = smallest.min(c.size)
 		_check(_dp(c.size.x) >= TOUCH_MIN and _dp(c.size.y) >= TOUCH_MIN,
@@ -625,35 +634,34 @@ func _ergonomics(panel, label: String) -> void:
 			"%s: '%s' label fits its %.0fpx button (wants %.0f)"
 			% [label, b.text, c.size.x, c.get_combined_minimum_size().x])
 
-	# Overlap, in both rows. A Container will happily hand two growing labels
-	# less width than their combined minimum and let them collide, which looks
-	# fine in a still and is unusable under a thumb.
-	for group in [buttons, panel.cards]:
-		for i in range(group.size()):
-			for j in range(i + 1, group.size()):
-				var a: Rect2 = (group[i] as Control).get_global_rect()
-				var b2: Rect2 = (group[j] as Control).get_global_rect()
-				_check(not a.intersects(b2),
-					"%s: target %d (%s) does not overlap %d (%s)"
-					% [label, i, (group[i] as Control).get_parent().get_name(),
-						j, (group[j] as Control).get_parent().get_name()])
-
-	# The cards are targets too, and they are the only thing in the row that
-	# changes width as the run does.
-	for c in panel.cards:
-		var card := c as Control
-		smallest = smallest.min(card.size)
-		_check(_dp(card.size.x) >= TOUCH_MIN and _dp(card.size.y) >= TOUCH_MIN,
-			"%s: card %d is a %.0fx%.0f target, %.0fx%.0f dp on a %ddp screen"
-			% [label, card.get_index(), card.size.x, card.size.y,
-				_dp(card.size.x), _dp(card.size.y), screen_dp])
+	# Overlap, across every row at once. A Container will happily hand two
+	# growing labels less width than their combined minimum and let them
+	# collide, which looks fine in a still and is unusable under a thumb.
+	for i in range(targets.size()):
+		for j in range(i + 1, targets.size()):
+			var a: Rect2 = (targets[i] as Control).get_global_rect()
+			var b2: Rect2 = (targets[j] as Control).get_global_rect()
+			_check(not a.intersects(b2),
+				"%s: target %d ('%s') does not overlap %d ('%s')"
+				% [label, i, targets[i].text, j, targets[j].text])
 
 	# Said out loud on the way past, so a green run records what it measured
 	# rather than only that it did not object. The numbers are the ones a
 	# hardware pass is then arguing with.
-	print("_ergonomics: %s -- %d buttons, %d dice, smallest target %.0fx%.0f (%.0fx%.0f dp at %ddp), canvas %.0fx%.0f"
-		% [label, buttons.size(), panel.cards.size(), smallest.x, smallest.y,
+	_check(not targets.is_empty(), "%s: found no targets to measure" % label)
+	print("_ergonomics: %s -- %d targets, smallest %.0fx%.0f (%.0fx%.0f dp at %ddp), canvas %.0fx%.0f"
+		% [label, targets.size(), smallest.x, smallest.y,
 			_dp(smallest.x), _dp(smallest.y), screen_dp, vp.x, vp.y])
+
+
+## Every visible Button under `n`, depth first. Invisible ones are skipped:
+## a screen that `_swap` has replaced is still in the tree, and its buttons
+## have a stale or zero rect that would fail every check for no reason.
+func _collect(n: Node, out: Array[Button]) -> void:
+	if n is Button and n.is_visible_in_tree():
+		out.append(n)
+	for child in n.get_children():
+		_collect(child, out)
 
 
 ## Set by `--check`. The ergonomics gate lives here because this is the only
