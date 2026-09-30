@@ -108,8 +108,38 @@ func _run() -> void:
 	# Every effect this run can reach has to actually be on disk, or the name
 	# resolves to null and play_sfx returns silently -- a missing sound file
 	# would otherwise look exactly like a mute.
+	# The durations LISTING.md's sound-effect table records, and the length of
+	# both beds. Nothing read them, so the table could go stale the way its "43 KB
+	# for all seven" already had. Length is the one property of an .ogg a
+	# text-level gate can see, and it catches a real way to lose a sound
+	# silently: the file is replaced, re-encoded short or truncated, the name
+	# still resolves, and every other check in this file passes.
+	#
+	# It does *not* catch the defect LISTING.md actually documents -- three files
+	# that ran their full length and stopped still ringing at the end. That is an
+	# RMS profile over decoded samples and needs a decoder; it was done by hand
+	# and cannot be done from here. Do not read this as covering it.
+	#
+	# The numbers were taken from the table and confirmed against `ffprobe`, which
+	# agrees exactly, so the engine's own `get_length()` is not the thing under
+	# suspicion. 10ms is loose enough for a re-encode and far tighter than any
+	# truncation worth catching.
+	const WANT := {
+		"roll": 0.711, "tap": 0.070, "hurt": 0.300, "strike": 0.220,
+		"block": 0.340, "win": 1.650, "lose": 1.900,
+	}
 	for n in game.SFX.keys():
 		_check(game.SFX[n] != null, "the %s effect is present" % n)
+		if game.SFX[n] == null:
+			continue
+		var got: float = game.SFX[n].get_length()
+		_check(absf(got - WANT[n]) <= 0.01,
+			"the %s effect is the length the table records (%.3fs, want %.3fs)"
+			% [n, got, WANT[n]])
+	for bed in [game.MUSIC_MENU, game.MUSIC_COMBAT]:
+		_check(absf(bed.get_length() - 40.0) <= 0.05,
+			"a music bed is the whole 40s loop, so its seam is the cut (%.3fs)"
+			% bed.get_length())
 	_grab(2, "fight-daily")  ## the daily badge, before anything is rolled
 
 	panel._on_roll()
