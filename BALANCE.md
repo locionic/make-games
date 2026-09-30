@@ -168,30 +168,46 @@ so no future run can use it to justify a result it already has.
 
 ## Baseline — measured, not remembered
 
-`godot --headless --path . --quit -s _balance.gd`, 150 runs per strategy,
-seeds 7000..7149, so re-running reproduces these exactly.
+`godot --headless --path . --quit -s _balance.gd`, 1000 runs per strategy,
+seeds 7000..7999, so re-running reproduces these exactly.
 
 ```
 strategy        wins%   avg depth   max
-BULWARK         24.0%     8.35     9
-ADD_DIE         23.3%     8.21     9
-SHARPEN         20.0%     8.16     9
-PIERCE          15.3%     8.22     9
-<random>        12.0%     7.97     9
-VIGOR            8.7%     7.63     9
-FOCUS            8.0%     7.55     9
-BLESS            7.3%     7.67     9
-MEND             7.3%     7.43     9
-REFORGE          4.7%     7.53     9
+ADD_DIE         24.5%     8.01     9
+PRECISE_STRIKE  19.5%     8.00     9
+SHARPEN         19.0%     7.99     9
+BULWARK         18.5%     8.09     9
+BLESS           17.6%     7.63     9
+VIGOR           17.4%     7.63     9
+<random>        16.5%     7.69     9
+PIERCE          15.3%     7.87     9
+MEND            13.3%     7.46     9
+GAMBLERS_RUSH    9.4%     7.66     9
+FOCUS            8.9%     7.35     9
+REFORGE          8.3%     7.09     9
+BASTION_HOLD     7.7%     7.13     9
 ```
 
 Three numbers define "better":
 
-- **best/random ratio** — baseline `2.0x` (BULWARK over random). How much the
+- **best/random ratio** — baseline `1.48x` (ADD_DIE over random). How much the
   1-of-3 pick matters. This is the thing the game is actually for.
-- **random win%** — baseline `12.0%`. A blind player. Must stay in a band.
-- **avg depth** — baseline `7.97`. If a change moves wins but not depth, it
+- **random win%** — baseline `16.5%`. A blind player. Must stay in a band.
+- **avg depth** — baseline `7.69`. If a change moves wins but not depth, it
   mostly shifted which fight kills you, not whether you finish.
+
+**The ratio's own baseline moved, and the pool moved it.** This block used to
+read `2.0x` off BULWARK over a random at 12.0%, on nine cards. The pool is
+twelve cards now and `<random>` is 16.5%, so the same arithmetic reads `1.48x`
+off ADD_DIE. That is not a card getting worse and not a regression — it is the
+effect named in "The ratio does not respond to the card table's composition"
+above, where a bigger table lifts the random draw faster than it lifts the best
+card. The old `2.0x` is not a number this game can produce any more, which is
+what makes criterion 1 below unreadable rather than merely demanding.
+
+Depth is the quieter half of the same story: 7.97 -> 7.69 against a 7.6 floor.
+A blind run finishes 0.09 into 0.09 of headroom, and that is the number to
+watch before the ratio, because the floor is a hard fail and the ratio is not.
 
 ## The gate
 
@@ -199,9 +215,27 @@ A change is kept only if **all** of these hold after the full suite passes
 (`godot --headless --path . --quit -s test.gd`, which must print
 `dice.self_test: OK`, `run.self_test: OK`, `9 scripts load`, `reached end`):
 
-1. best/random ratio **strictly widens** vs `2.0x`, and
+1. best/random ratio **strictly widens** vs `1.48x`, and
 2. random win% stays within **8–18%**, and
 3. avg depth does not drop below `7.6`.
+
+> **Criterion 1 was left at `2.0x` for four runs after the pool outgrew it,
+> and that is the honest reason this block was stale rather than merely old.**
+> On the twelve-card pool a 2.0x ratio needs the best card at **33.0%** with
+> random at 16.5%. The best card in the table measures 24.5% and the best row
+> in the whole bench — `dice:nudge`, which is a die policy and not a card at
+> all — measures 25.0%. So criterion 1 as it stood could not be passed by any
+> configuration of the shipped game; every run against it failed for a reason
+> that had nothing to do with the change under test, and the failures were
+> being read as evidence about cards.
+>
+> The threshold is re-anchored to `1.48x` because that is the best/random the
+> current pool actually produces, and a comparison has to be against something
+> reachable to mean anything. It is deliberately *not* re-anchored to "whatever
+> the last run scored" — that would make the gate unfailable by a card that does
+> nothing. This is a change to what passing means, so it is stated here rather
+> than buried: **a card now passes criterion 1 by beating 1.48x, which today
+> means beating 24.4% wins.** The number moves every time the pool does.
 
 Otherwise revert and record why. The 8–18% band is the part that matters most:
 a roguelike that a blind player wins 12% of the time is about right, and
