@@ -1,0 +1,15 @@
+# Godot's import cache and editor state — regenerated on first open.
+.godot/
+
+# Export output and the Android template toolchain (~1.1 GB).
+build/
+android/
+
+# Regenerable from the engine; it is 6.7 MB of API stubs.
+extension_api.json
+
+# Bridge transcript.
+claude-bridge.log
+
+# Stray backup from the icon pass.
+icon.png.bak-flat
