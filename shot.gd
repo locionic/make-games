@@ -128,14 +128,24 @@ func _run() -> void:
 	panel._on_reroll()
 	_check(_last_stream(game) == game.SFX["roll"], "and the re-roll clatters again")
 	_check(_last_vol(game) < 0.0, "quieter than the opening roll, so the two are tellable apart")
-	# PLAN.md 3.1: a nudged die and a re-rolled die must not look alike. Only half
-	# of that is observable -- the tumble is a tween no idle screenshot catches --
-	# so the half that bites is that the gold tick belongs to Focus alone. A
-	# gamble dressed in certainty's colours is the exact failure the split
-	# animation exists to prevent.
+	# PLAN.md 3.1: a nudged die and a re-rolled die must not look alike. Two things
+	# separate them and both are checkable, so both are checked. A gamble dressed
+	# in certainty's colours is the exact failure the split animation exists to
+	# prevent, and dressing it needs two independent signs: the gold tick belongs
+	# to Focus alone, and so does the tumble.
+	#
+	# The tumble used to be filed here as unobservable -- "a tween no idle
+	# screenshot catches". It is a tween, but `busy` is not: fight.gd writes it in
+	# exactly two places, the flicker and the end-turn resolve, and `_flicker`
+	# reaches its first await before returning, so the lock is already held on the
+	# line after the call. The tick check on its own would pass just as happily on
+	# a re-roll that had stopped animating altogether, because "no tick" is the
+	# right answer both for a working re-roll and for a dead one.
 	_check(panel.find_children("Tick", "Label", false, false).is_empty(),
 		"a re-roll raises no tick -- the gold tick is Focus's alone")
+	_check(panel.busy, "but it takes the card lock, because its faces tumble")
 	await _settle()
+	_check(not panel.busy, "and lets go of it once they land")
 
 	# Focus, end to end through the UI rather than the rules layer. The mode has
 	# to disarm itself, and a cancelled arm has to cost nothing -- a mode that
@@ -176,12 +186,16 @@ func _run() -> void:
 	_check(panel.enc.dice[target].face().worth() > was, "the focused die is strictly better")
 	_check(panel.enc.dice[target].spent, "and is spent, so it cannot be re-rolled as well")
 	_check(_last_stream(game) == game.SFX["block"], "focus chimes, the set's other rising sound")
-	# The other half of 3.1. The tick is created synchronously and floats for
+	# The rest of 3.1. The tick is created synchronously and floats for
 	# 0.7s, so it is still findable on the very next line -- and it is named
 	# "Tick" rather than "Float" so this cannot be satisfied by a damage number,
 	# which is what gives the re-roll assertion above its meaning.
 	_check(panel.find_children("Tick", "Label", false, false).size() == 1,
 		"and a gold tick rises off the card Focus just spent")
+	# The mirror of the lock check above. Focus takes no lock because nothing
+	# tumbles: this is the whole difference between the two animations, stated as
+	# a fact about the panel rather than as an inference from a screenshot.
+	_check(not panel.busy, "and no card lock at all -- where a re-roll tumbles, Focus lifts")
 
 	# Bank, through the same three doors. The rule the UI has to protect is the
 	# mutual exclusion: Focus and Bank are both "spend a resource on one die", so
