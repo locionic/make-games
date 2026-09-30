@@ -213,6 +213,23 @@ func _go() -> void:
 	# 7.9, because the good draw gains three times what the bad one does. The
 	# variance is the thing worth fixing and this rule widens it.
 	#
+	# The lottery itself is not being fixed, and that is a decision rather than an
+	# oversight. The lever is agency, not arithmetic: show the three bonus dice on
+	# the ADD_DIE card and let the player choose one. That turns the best card in
+	# the table from the average of three into a pick between 16.5% and 32.3%,
+	# and the block die stops being a build the player happened to be handed and
+	# becomes one they chose -- which is what PLAN.md's design principle actually
+	# asks for, and the same axis the FOCUS clamp above sits on. Rebalancing the
+	# three dice to narrow the spread is the arithmetic fix and it is the worse
+	# one: it makes all three draws mediocre rather than one of them chosen.
+	#
+	# It is not made here because it is a card-pool change and
+	# build/android/dicefate.aab is signed at versionCode 5 against the roster
+	# these numbers were shot for. The owner chose to ship versionCode 5 as
+	# signed and to take both this and the FOCUS clamp at the next build rather
+	# than re-cut a release for them, so what is recorded here is the two levers
+	# and their measured value, not a pending patch.
+	#
 	# Measured in a sandbox copy of run.gd/dice.gd with two probe-only hooks
 	# (`forced_bonus`, `bonus_pierce`), which is why there are no arms for any
 	# of this above: the hooks live in the rules layer and shipping them to
