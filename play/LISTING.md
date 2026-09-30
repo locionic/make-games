@@ -57,9 +57,19 @@ the press/unmute round-trip and the bus state, on a staged copy of the save.
 
 Seven one-shots, **synthesised by `_mksfx.py`** (stdlib Python, seed 20260929)
 rather than generated. FlowMusic is a music model and ignores `duration` — a 5s
-request comes back at two minutes — so it cannot make a 200ms die-clack. 43 KB
-for all seven, no licence, and they land exactly on the event that asked for
-them. Regenerate with `python3 _mksfx.py` then the ffmpeg loop in its docstring.
+request comes back at two minutes — so it cannot make a 200ms die-clack. 45 KiB
+(46,338 bytes) for all seven, no licence, and they land exactly on the event that
+asked for them. Regenerate with `python3 _mksfx.py` then the ffmpeg loop in its
+docstring. This said 43 KB until 2026-09-30, and was wrong: the files were
+regenerated after that number was written — the decay tightening and the tail
+fade below both landed in them — and nothing recalculated it.
+
+Every duration in the table below is now asserted by `shot.gd --check` against
+the engine's own `get_length()`, and both beds against 40s, so the table cannot
+drift the way that total did. That catches a file that has been replaced or
+truncated, which loses a sound silently — the name still resolves. It does
+**not** catch the defect described further down, where a file runs its full
+length and stops still ringing; that needs decoded samples, not a length.
 
 | file | dur | fires on |
 |---|---|---|
