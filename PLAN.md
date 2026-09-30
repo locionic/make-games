@@ -125,5 +125,13 @@ godot --headless --path . -s test.gd
 godot --headless --path . -s _balance.gd
 
 # 3. Screenshot layout regression test (ensures UI fits 540x960 cleanly)
+#    --check runs the same flow and the same assertions without writing the
+#    store art, and exits non-zero on a failed check. Add `--at 360` / `--at 411`
+#    to re-measure the touch targets on narrower phones (4.1).
+xvfb-run -a godot --path . --rendering-driver opengl3 -s shot.gd -- --check
+```
+
+To re-shoot the Play listing (overwrites `play/screenshots/`):
+```bash
 xvfb-run -a godot --path . --rendering-driver opengl3 -s shot.gd
 ```

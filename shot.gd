@@ -28,7 +28,14 @@ const SPARE := "res://play/screenshots-spare/%02d-%s.png"
 
 
 func _init() -> void:
-	check_only = "--check" in OS.get_cmdline_user_args()
+	var args := OS.get_cmdline_user_args()
+	check_only = "--check" in args
+	# `--at 360`, so the gate can be asked about a phone narrower than the one
+	# the layout is authored on. Godot's own `--resolution` cannot answer that:
+	# it changes the window and leaves the canvas at 540x960.
+	var i := args.find("--at")
+	if i >= 0 and i + 1 < args.size():
+		screen_dp = float(args[i + 1])
 	call_deferred("_run")
 
 
@@ -524,13 +531,42 @@ func _sfx_fired(game, name: String) -> bool:
 	return false
 
 
-## Material's minimum touch target. 48dp is the number Android's own design
-## guidance gives and the one a fingertip can reliably land on; the game's
-## 540x960 canvas maps 1:1 to it, so a raw pixel comparison is the right one.
+## Material's minimum touch target, in dp. 48dp is the number Android's own
+## design guidance gives and the one a fingertip can reliably land on.
 const TOUCH_MIN := 48.0
+
+## The narrowest phone this is expected to clear: 360dp, and it does.
+##
+## 320dp is not a tuning miss, it is geometry. Clearing 48dp at 320dp needs 81
+## canvas units, and the six-dice card row is six cards across 508px -- 78 units
+## each, fixed by the die count, not by any height anyone picks. No button
+## height fixes it; only fewer dice per row does. 320 is Play's *screenshot*
+## floor, not a screen width, so the honest reading of `--at 320` failing is
+## "the layout does not claim that device", not "ship a bug". Run the sweep
+## from PLAN.md's gate: `--check --at 360`, `--at 411`, `--at 540`.
 
 ## How many checks this run has failed.
 var _fails := 0
+
+## Width of the phone being reasoned about, in dp. `--at 360` for a narrow one.
+## Defaults to 540 because that is the canvas the layout is authored on, and
+## one canvas unit is one dp there and only there -- which is what the first
+## version of this gate quietly assumed everywhere. See _dp().
+var screen_dp := 540.0
+
+
+## A size in canvas units as the finger meets it, in dp.
+##
+## `canvas_items` + `expand` never shrinks the canvas: the viewport stays
+## 540x960 in canvas units on any window, and the whole thing is scaled to fit.
+## So a 360dp phone draws a 54-unit button as 36dp, and no amount of widening
+## the canvas fixes it. Measured rather than reasoned: run this gate at
+## `--resolution 360x640` and it prints the *identical* 540x960 and 96x54 as the
+## 540-wide run, which is the gate being blind, not the layout being fine.
+## PLAN.md 4.1 asks about "small screens (540x960 baseline)" and the baseline
+## was the only screen the gate ever looked at.
+func _dp(canvas_px: float) -> float:
+	return canvas_px * screen_dp / 540.0
 
 
 ## assert(), except it is a gate and not a debugger breakpoint.
@@ -576,9 +612,10 @@ func _ergonomics(panel, label: String) -> void:
 	for b in buttons:
 		var c := b as Control
 		smallest = smallest.min(c.size)
-		_check(c.size.x >= TOUCH_MIN and c.size.y >= TOUCH_MIN,
-			"%s: '%s' is a %.0fx%.0f target, over the %.0f minimum"
-			% [label, b.text, c.size.x, c.size.y, TOUCH_MIN])
+		_check(_dp(c.size.x) >= TOUCH_MIN and _dp(c.size.y) >= TOUCH_MIN,
+			"%s: '%s' is a %.0fx%.0f target, %.0fx%.0f dp on a %ddp screen, over the %.0f minimum"
+			% [label, b.text, c.size.x, c.size.y, _dp(c.size.x), _dp(c.size.y),
+				screen_dp, TOUCH_MIN])
 		var r := c.get_global_rect()
 		_check(r.position.x >= 0.0 and r.position.y >= 0.0
 			and r.end.x <= vp.x and r.end.y <= vp.y,
@@ -606,16 +643,17 @@ func _ergonomics(panel, label: String) -> void:
 	for c in panel.cards:
 		var card := c as Control
 		smallest = smallest.min(card.size)
-		_check(card.size.x >= TOUCH_MIN and card.size.y >= TOUCH_MIN,
-			"%s: card %d is a %.0fx%.0f target"
-			% [label, card.get_index(), card.size.x, card.size.y])
+		_check(_dp(card.size.x) >= TOUCH_MIN and _dp(card.size.y) >= TOUCH_MIN,
+			"%s: card %d is a %.0fx%.0f target, %.0fx%.0f dp on a %ddp screen"
+			% [label, card.get_index(), card.size.x, card.size.y,
+				_dp(card.size.x), _dp(card.size.y), screen_dp])
 
 	# Said out loud on the way past, so a green run records what it measured
 	# rather than only that it did not object. The numbers are the ones a
 	# hardware pass is then arguing with.
-	print("_ergonomics: %s -- %d buttons, %d dice, smallest target %.0fx%.0f, screen %.0fx%.0f"
+	print("_ergonomics: %s -- %d buttons, %d dice, smallest target %.0fx%.0f (%.0fx%.0f dp at %ddp), canvas %.0fx%.0f"
 		% [label, buttons.size(), panel.cards.size(), smallest.x, smallest.y,
-			vp.x, vp.y])
+			_dp(smallest.x), _dp(smallest.y), screen_dp, vp.x, vp.y])
 
 
 ## Set by `--check`. The ergonomics gate lives here because this is the only

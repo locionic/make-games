@@ -305,7 +305,15 @@ func _mk_button(parent: Node, text: String, accent: Color) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.custom_minimum_size = Vector2(0, 54)
+	# 74 canvas units tall, not 54. The canvas is 540 wide and never shrinks --
+	# `canvas_items` + `expand` scales the whole thing to the window -- so a unit
+	# is one dp only on a 540dp phone. Measured with `shot.gd --check --at N`,
+	# which is the gate that found it: at 54 the button row was 36dp tall on a
+	# 360dp phone, 12dp under the 48dp floor, and the same at every width.
+	# Sized the other way round, off a number that means something: 74 units is
+	# 56dp on a 411dp phone, which is the comfortable target Material asks for
+	# and not just the minimum, and that clears 48dp on a 360dp one too.
+	b.custom_minimum_size = Vector2(0, 74)
 	b.add_theme_font_size_override("font_size", T.F_BODY)
 	b.add_theme_color_override("font_color", accent)
 	b.add_theme_color_override("font_hover_color", T.TEXT)
