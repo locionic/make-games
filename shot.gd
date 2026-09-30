@@ -487,6 +487,66 @@ func _run() -> void:
 		_check(near, "the float lands on the control it describes, not the panel corner")
 	_grab(9, "fight-impact", SPARE)
 
+	# PLAN.md 3.2c's micro-shake and 3.2b's haptics shipped with five call sites
+	# between them and **zero** assertions anywhere -- not here, not in test.gd.
+	# The floats above are covered; the punch that made them land is not. This
+	# file's own rule is that "a check that passes because nothing happened is
+	# worse than no check", and here there was no check at all.
+	#
+	# What is worth proving is specific. `shake()` tweens `position` on
+	# `shake_root`, and that is a `MarginContainer` carrying `PRESET_FULL_RECT`.
+	# On an anchored Control, writing `position` moves the left edge and leaves
+	# the right edge alone -- so the failure this invites is the panel *narrowing*
+	# by however far it was displaced, which squeezes every button inside it for
+	# the length of the shake. One sample settles it: the offset must be non-zero
+	# and the size must not have moved.
+	#
+	# Sampled under `Engine.time_scale` because the timing cannot be trusted
+	# otherwise. This container's software GL runs at roughly a third of a second
+	# a frame and the whole shake is 4 x 0.04 + 0.06 = 0.22s, so one
+	# `process_frame` can step clean past the end of it and find `position` back
+	# at zero -- a passing check that observed nothing, which is the exact thing
+	# the paragraph above is about. At 0.02 the same frame advances the tween by
+	# about 6ms and lands inside it. Three samples, because the offset is a
+	# random walk and any single one of them can sit near the origin. Time scale
+	# goes back before the first `_check` so a failure cannot leave the rest of
+	# the run slowed, and this block sits after the grab so no later check is
+	# measuring a slowed frame.
+	var pre_size: Vector2 = plated.shake_root.size
+	var pre_pos: Vector2 = plated.shake_root.position
+	var moved := 0.0
+	Engine.time_scale = 0.02
+	for _i in 3:
+		await process_frame
+		moved = maxf(moved, plated.shake_root.position.length())
+	Engine.time_scale = 1.0
+	# 0.25px, not something nearer the measured peak. The invariant is that the
+	# shake *runs* -- a dead one leaves position untouched and reads exactly 0.00
+	# -- and PLAN 3.2c asks for "a micro-shake", not for a magnitude. Sampling a
+	# random walk and gating it against its own typical value buys nothing and
+	# risks a flake; over 8 runs the peak measured 1.62 to 6.58, so 0.25 keeps
+	# ~6x margin while still being 0.00 on a broken one.
+	_check(moved > 0.25,
+		"the micro-shake displaces the panel (peak %.2fpx, at %s)"
+		% [moved, plated.shake_root.position])
+	_check(plated.shake_root.size.is_equal_approx(pre_size),
+		"and moves it without narrowing it (%s vs %s)"
+		% [plated.shake_root.size, pre_size])
+	# Printed whether or not it passed, like the ergonomics lines. A threshold
+	# that only shows itself on failure cannot be told apart from one that is
+	# always true, and this is the second question in a row where that was the
+	# whole defect.
+	#
+	# The offset is printed as what it is, which is not "resting". The resolve
+	# above called `shake()` and at a third of a second a frame that tween is
+	# still in flight when this block starts, so `pre_pos` is a position partway
+	# through a shake, not a settled one. It does not matter to either check --
+	# `moved` only asks that the panel travels during the sampling window, and
+	# the size comparison does not involve position at all -- but calling it
+	# resting would be a claim this file has no way to support.
+	print("  shake: peak %.2fpx travel, from %s (in flight from the resolve), panel %s (was %s)"
+		% [moved, pre_pos, plated.shake_root.size, pre_size])
+
 	# PLAN.md 4.1, the part of it that runs without a handset. "Touch
 	# ergonomics for the new buttons on small screens" is a claim about
 	# geometry, and every grab above photographs the fight at rest -- which
