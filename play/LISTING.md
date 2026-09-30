@@ -137,8 +137,9 @@ a list. Repetition is a violation risk, so they are not used twice.
 Nine fights stand between you and The Devourer. You bring four dice.
 
 That is the whole game. Roll them, read the faces, and decide which ones were
-not worth the roll. Each die you dislike gets one re-roll — spend it or lose
-it. Then end the turn and watch what the thing across from you does about it.
+not worth the roll. You get one re-roll for the whole hand, so spend it or
+lose it. Then end the turn and watch what the thing across from you does about
+it.
 
 Between fights you take one of three upgrades, and upgrades change your dice,
 not a stat bar. Sharpen every damage face. Bless every block face. Add a fifth
@@ -155,18 +156,27 @@ choosing which one to bet.
 How a turn works
 
 You roll every die in your pool at once. Each face is damage, block, or a
-bonus re-roll. Tap any dice you are unhappy with to queue them, spend your
-re-rolls, and then everything you are holding resolves together — so you commit
-before you know how it lands. Your damage goes through the enemy's armour, and
-what it hits first, you. Enemies answer every turn, and the ones that survive
-long enough get worse at what they do.
+bonus re-roll. Tap any dice you are unhappy with to queue them, spend the
+turn's single re-roll, and then everything you are holding resolves together —
+so you commit before you know how it lands. Your damage goes through the
+enemy's armour, and what it hits first, you. Enemies answer every turn, and the
+ones that survive long enough get worse at what they do.
+
+Two ways out of a bad hand
+
+Each fight gives you one Focus and one Bank, and they are not the same kind of
+promise. Focus steps a die up to the next better face on that die — certain,
+and it costs you the die for the rest of the turn. Bank does not improve
+anything: it holds a die back whole, out of this turn and into the next. One
+is a trade for a guarantee, the other a bet that next turn is a better hand
+than this one.
 
 What is in it
 
 Nine hand-built fights. Rust Golem grows its armour every turn until you break
 through it. Bloodletter heals off what it deals to you. Hexweaver curses one of
 your dice to nothing. Berserker gets angrier the longer it lives. The Devourer
-does both, and it has 78 health.
+is armoured and enraged and it has 78 health.
 
 A daily run
 
@@ -196,13 +206,28 @@ you are already playing.
 
 ## Release checklist
 
-- [ ] Upload the **release**-signed AAB — `build/android/dicefate-release.aab`.
-      `build/android/dicefate.aab` is debug-signed and Play rejects it.
+- [ ] Upload the **release**-signed AAB.
+      **Both** AABs in `build/android/` are release-signed — checked with
+      `keytool -printcert -jarfile`, owner and issuer `CN=Dice Spike,
+      OU=Games, O=DiceSpike, L=Unknown, ST=Unknown, C=US`, valid from
+      2026-09-28. A debug-signed build would say `CN=Android Debug`, and
+      neither does. An earlier version of this checklist said
+      `dicefate.aab` was debug-signed and Play would reject it; that was
+      wrong, and it was acted on — so do not skip the upload on that basis.
+      The two files are the same build under two names, kept by hand, which is
+      how they drifted apart in the first place. Upload whichever is newer.
 - [ ] `versionCode` must be strictly higher than any version ever uploaded for
-      `com.dicespike.game`, including drafts and rejected uploads. `project.godot`
-      is at 4 (the note here used to say 3, which was stale) — 4 is correct only
-      if nothing above it has ever been uploaded. Bump it and rebuild if in doubt;
-      a rejected upload still counts as uploaded.
+      `com.dicespike.game`, including drafts and rejected uploads. It lives in
+      `export_presets.cfg` as `version/code` under the Android preset — **not**
+      in `project.godot`, which an earlier version of this note claimed. It is
+      now 5, bumped 2026-09-30 in the same commit that fixed the export filter,
+      because that is the build which first carried the Phase 3 work. 5 is
+      correct only if nothing above it has ever been uploaded. Bump it and
+      rebuild if in doubt; a rejected upload still counts as uploaded.
 - [ ] The listing ID `com.dicespike.game` is permanent once created.
-- [ ] `export_presets.cfg` holds the release keystore password in plaintext.
-      Gitignore it before running `git init` on this project.
+- [ ] `export_presets.cfg` holds the release keystore password in plaintext,
+      and this note said to gitignore it *before* `git init`. `git init` has
+      since happened and the password is in history at `088a3f1`. There is no
+      remote, so nothing has left the machine, but the fix is no longer "add a
+      line to `.gitignore`" — the value is in a commit. Rotate the key or drop
+      it to an env-var read before this repo goes anywhere.
