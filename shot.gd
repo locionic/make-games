@@ -1030,6 +1030,73 @@ func _check_listing_text() -> void:
 		_check(n > 0, "the %s is not empty" % what)
 		_check(n <= cap, "the %s is inside Play's %d character limit (%d)" % [what, cap, n])
 		print("  listing: %s is %d characters, cap %d, %d to spare" % [what, n, cap, cap - n])
+	_check_copy_claims(str(blocks[1]))
+
+
+## Spelled-out counts, so a claim can be *built* from the constant that owns it
+## rather than trusted. Nine fights, four dice, three offers: each is a number
+## a constant owns, and a hand-typed copy of a number is exactly how "you are
+## reading five numbers" got into a four-dice game -- 99.9% of fights measured
+## at four, three in 2439 at five. Index by value, because the whole point is
+## that the copy is derived.
+const COUNT_WORD := ["", "one", "two", "three", "four", "five", "six", "seven",
+	"eight", "nine", "ten", "eleven", "twelve"]
+
+## The full description's factual claims, each tied to the code that owns it.
+##
+## Length was checked and accuracy was not, which is the gap: the block fits
+## Play's cap perfectly while saying a number the game does not use. Two claims
+## were wrong this way and both contradicted the copy's own later sentences --
+## "Add a fifth die to the pool" against "five numbers", and "Hexweaver curses
+## one of your dice to nothing" against "each face is damage, block, or a bonus
+## re-roll". The copy was internally consistent and externally false, which is
+## the hardest kind of wrong to catch by reading.
+##
+## This lives here rather than in `run.gd`'s `self_test`, which pins the enemy
+## claims, because it is the only function holding the text. A check in `run.gd`
+## would have to re-read the file to say anything about what the file says.
+func _check_copy_claims(raw: String) -> void:
+	# Two normalisations, both forced by the file being prose and not data.
+	# Newlines: the block is hard-wrapped at 76 columns, so "Add a fifth\ndie to
+	# the pool" is one sentence in a file and two unrelated strings to a match.
+	# Case: the copy opens sentences, so "Nine fights" and "nine fights" are the
+	# same claim. The length check above still reads `raw`, because Play counts
+	# every newline and a check that quietly dropped them would be measuring a
+	# string Play never sees.
+	var text := raw.replace("\n", " ").to_lower()
+	var boss := RunState.new().enemy_for(RunState.FINAL_DEPTH)
+	# Every claim is `copy contains (a phrase built from a constant)`, so moving
+	# the constant makes its row red rather than silently leaving the prose.
+	for claim in [
+		["%s fights stand between you and the devourer" % COUNT_WORD[RunState.FINAL_DEPTH + 1],
+			"the fight count is FINAL_DEPTH + 1"],
+		["you bring %s dice." % COUNT_WORD[RunState.POOL_SIZE], "the opening hand is POOL_SIZE"],
+		["you are reading %s numbers" % COUNT_WORD[RunState.POOL_SIZE],
+			"the dice you read each turn is POOL_SIZE"],
+		["add a fifth die to the pool", "New Die adds exactly one to a POOL_SIZE hand"],
+		["one of three upgrades", "the offer is 1-of-3"],
+		["your first three finished runs each", "the unlock cap is three"],
+		["it has %d health" % boss.hp, "the boss health the copy quotes"],
+	]:
+		_check(text.contains(str(claim[0]).to_lower()),
+			"the description's claim about %s -- looking for %r" % [claim[1], claim[0]])
+
+	# The categorical one, and the only claim here that is about the roster
+	# rather than a constant: "each face is damage, block, or a bonus re-roll"
+	# was false for 3 of the 42 faces, all of them natural faces on Sunder and
+	# Riposte and all of them worth nothing. The copy now says so, so the copy
+	# only holds while such faces still exist -- re-forge Sunder's `rust` away
+	# and the sentence goes stale, which is the point of checking it.
+	var dead := 0
+	for d in Rules.Encounter.library() + Rules.Encounter.bonus_dice():
+		for f in d.faces:
+			if f.dmg == 0 and f.block == 0 and f.rerolls == 0:
+				dead += 1
+	_check(dead > 0,
+		"the roster still holds faces worth nothing, so the copy's 'a few faces are nothing at all' holds (found %d)"
+		% dead)
+	_check(text.contains("a few faces are nothing at all"),
+		"and the description says so rather than claiming every face does something")
 
 
 ## The Assets table in `play/LISTING.md` states a spec and a measured value for

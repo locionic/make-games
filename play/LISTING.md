@@ -177,9 +177,12 @@ and your review text are the *entire* indexable surface, so the genre words live
 here — placed once each, in the opening where they read as prose rather than as
 a list. Repetition is a violation risk, so they are not used twice.
 
-Two claims in this block were corrected on 2026-09-30, both after measuring the
-code rather than after reading it, and both are now pinned in `run.gd`'s
-`self_test` so they cannot drift back.
+Four claims in this block have been corrected, all after measuring the code
+rather than after reading it. The first two are pinned in `run.gd`'s
+`self_test`; the last two are checked where the copy itself lives, in `shot.gd`'s
+`_check_copy_claims`, which is the only function holding the text — a check in
+`run.gd` would have to re-read the file to say anything about what the file
+says.
 
 **"Every player gets the same dice and the same enemies on the same day" was
 half wrong.** The daily seeds exactly one thing per run — `game.gd:_start`
@@ -202,17 +205,52 @@ the test pinning this needed a *fourth* `record_run` to fail against an
 uncapped build — three runs leave the counter at 3 either way, so a check
 placed at the third is a check that cannot fail.
 
+**"You are reading five numbers" described the upgraded state as the default.**
+`POOL_SIZE` is 4 and New Die adds exactly one, so a hand is four until a player
+takes a card whose text has no number on it. Measured across 2439 bot fights:
+**99.9% were four, and 3 were five** — only 0.7% of runs ever took New Die at
+all, because `_weak_pick` chooses on the biggest headline number and "Add a
+wild die to your pool." has none. The copy contradicted itself two paragraphs
+earlier by correctly saying "Add a fifth die to the pool"; that sentence is what
+made four the default and this one disagreed with it.
+
+**"Each face is damage, block, or a bonus re-roll" was false for 3 of the 42
+faces.** Sunder carries two faces and Riposte one, all labelled `rust`/`fend`
+and all `(0, 0, 0)` — they are the *natural* worst face on those dice, not an
+overlay, and `BEH_CURSE` works by dragging a die down to exactly them. So 7.1%
+of the roster is a roll that gives you nothing, and this block also says
+"Hexweaver curses one of your dice to nothing." Two sentences, one section
+apart, flatly disagreeing. The block now says "A few faces are nothing at all,
+which is exactly what Hexweaver reaches for."
+
+Both are the same failure and worth naming: **length was checked and accuracy
+was not.** The block sits at 2854 of Play's 4000 characters and every word of it
+is a claim about the game, and nothing read those words back against the code.
+The two above are internally consistent — each contradicts a *later* sentence
+in the same block — which is the hardest kind of wrong to catch by reading and
+the easiest to ship. `_check_copy_claims` now builds each numeric claim from the
+constant that owns it, so moving `POOL_SIZE` or `FINAL_DEPTH` or the boss's
+health turns its row red instead of leaving the prose behind.
+
 The rest of the block was audited the same way and holds, so it is listed here
 once rather than re-derived: `run.gd`'s `self_test` now asserts the four named
 enemies' names *and* the behaviour each is described as having, plus the boss's
 78 health, 5 armour and enrage — retag Bloodletter or rebalance the Devourer and
-the suite goes red. Checked by hand and holding: "nine fights" (`FINAL_DEPTH + 1`),
-"four dice" (`POOL_SIZE`), "one re-roll" (`base_rerolls`), "one Focus and one
-Bank" per fight (`base_focus`, granted at the fight and not each turn),
-Rust Golem's armour growth meeting its ceiling at `ARMOR_GROW_CAP` = 12, which is
-what Sunder's `cleave` 12 exists to answer, "Sharpen"/"Bless"/"New Die" matching
-the `UPGRADES` table word for word, and "playable offline" — there is no
-`http`, `socket` or `request` call in any script in this repo.
+the suite goes red. Now checked by `_check_copy_claims` rather than by eye:
+"nine fights" (`FINAL_DEPTH + 1`), "four dice" and "four numbers"
+(`POOL_SIZE`), "add a fifth die", "one of three upgrades", "your first three
+finished runs", and the boss's 78 health. Still checked by hand only, and
+holding: "one re-roll" (`base_rerolls`), "one Focus and one Bank" per fight
+(`base_focus`, granted at the fight and not each turn), Rust Golem's armour
+growth meeting its ceiling at `ARMOR_GROW_CAP` = 12, which is what Sunder's
+`cleave` 12 exists to answer, "Sharpen"/"Bless"/"New Die" matching the
+`UPGRADES` table word for word, and "playable offline" — there is no `http`,
+`socket` or `request` call in any script in this repo.
+
+The "still checked by hand only" list is not a list of things that are fine. It
+is the remaining work: every entry is a claim a constant owns and a one-line
+row in `_check_copy_claims` would pin, and two of the four claims that turned
+out to be false had been on a hand-checked list of exactly this kind first.
 
 Two things in the block stay unverifiable from here and are the owner's to set
 in the Console, not code claims: the "no ads / no in-app purchases" lines and
@@ -235,13 +273,14 @@ A turn-based roguelike, built around a puzzle
 
 Every turn is one decision — which dice were wasted, and which of those you can
 afford to roll again. That is the strategy, and it is the whole strategy. You
-are not managing a timer or a stat bar; you are reading five numbers and
+are not managing a timer or a stat bar; you are reading four numbers and
 choosing which one to bet.
 
 How a turn works
 
 You roll every die in your pool at once. Each face is damage, block, or a
-bonus re-roll. Tap any dice you are unhappy with to queue them, spend the
+bonus re-roll. A few faces are nothing at all, which is exactly what Hexweaver
+reaches for. Tap any dice you are unhappy with to queue them, spend the
 turn's single re-roll, and then everything you are holding resolves together —
 so you commit before you know how it lands. Your damage goes through the
 enemy's armour, and what it hits first, you. Enemies answer every turn, and the
