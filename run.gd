@@ -209,16 +209,37 @@ static func upgrade_by_id(id: String) -> Dictionary:
 	return UPGRADES[0]
 
 
+## A bonus die this run is not already holding. ADD_DIE appends one of these, so
+## when the list is empty the card has nothing to give. The offer and the
+## application have to ask that one question or the card gets dealt to a player
+## who can only spend a pick on nothing.
+func unheld_bonus_dice() -> Array:
+	var held: Array = []
+	for d in dice:
+		held.append(d.title)
+	var out: Array = []
+	for b in Rules.Encounter.bonus_dice():
+		if not held.has(b.title):
+			out.append(b)
+	return out
+
 ## Three distinct upgrade offers. ADD_DIE stops appearing once the pool is full
 ## -- and after it has been taken once, which is the bigger of the two clamps.
 ## Measured over 150 bot runs per strategy, letting it repeat won 48% against
 ## 15% for picking at random: a whole die beats any flat +1, so an unbounded
 ## New Die snowballs and the 1-of-3 pick stops being a choice. Once per run it
 ## is a decision again rather than the only decision.
+##
+## The third clamp is the one that was missing. A player who has unlocked all
+## three bonus dice and plays them is holding every one, and their pool is 4 of
+## MAX_DICE 6 -- so neither existing clamp fires and New Die is dealt as a pick
+## that does nothing. Measured at 14 appearances in 60 draws of three. That is
+## worse than a dominated option, which at least announces that it lost.
 func roll_rewards(rng: RandomNumberGenerator) -> Array:
 	var pool: Array = []
 	for u in UPGRADES:
-		if u["id"] == "ADD_DIE" and (dice.size() >= MAX_DICE or upgrades.has("ADD_DIE")):
+		if u["id"] == "ADD_DIE" and (dice.size() >= MAX_DICE
+				or upgrades.has("ADD_DIE") or unheld_bonus_dice().is_empty()):
 			continue
 		pool.append(u)
 	var picks: Array = []
@@ -238,14 +259,10 @@ func apply_upgrade(id: String, rng: RandomNumberGenerator) -> void:
 			if dice.size() >= MAX_DICE:
 				return  ## pool is full -- roll_rewards filters this out, guard anyway
 			# Now that the bonus dice can also be starters, one of them may
-			# already be in hand; offering a second copy wastes the pick.
-			var held: Array = []
-			for d in dice:
-				held.append(d.title)
-			var bonus: Array = []
-			for b in Rules.Encounter.bonus_dice():
-				if not held.has(b.title):
-					bonus.append(b)
+			# already be in hand; offering a second copy wastes the pick. The
+			# same question roll_rewards asked before dealing it, so a New Die
+			# that reaches here has something left to give.
+			var bonus := unheld_bonus_dice()
 			if not bonus.is_empty():
 				dice.append(bonus[rng.randi_range(0, bonus.size() - 1)])
 		"SHARPEN":
@@ -656,6 +673,42 @@ static func self_test() -> void:
 	for o in offers:
 		ids[o["id"]] = true
 		Check.check(o["id"] != "ADD_DIE", "ADD_DIE not offered at a full pool")
+
+	# ...and drops out when it has nothing left to give either. A player who has
+	# unlocked all three bonus dice and plays them is holding every one of them,
+	# so ADD_DIE has nothing to append -- but the pool is 4 of MAX_DICE 6, so the
+	# size clamp does not catch it and the card is offered as a pick that does
+	# nothing. The card is then consumed by `apply_upgrade`, so it is a 1-of-3
+	# slot spent on nothing, which is worse than a dominated option: a dominated
+	# one at least tells you it lost. Reachable from the state the store
+	# description advertises -- three finished runs, hand chosen.
+	#
+	# The "nothing left to give" precondition below is recomputed here rather
+	# than read off `unheld_bonus_dice()`, even though that is the helper the
+	# fix calls. Asserting the helper against itself would pass on a helper
+	# that returns the wrong thing, and the helper is the thing that was wrong.
+	var done := new()
+	done.set_loadout(["Riposte", "Spark", "Fang", "Blade"])
+	Check.check(done.dice.size() == 4, "the all-bonus hand fills to four dice")
+	Check.check(done.dice.size() < MAX_DICE,
+		"and the pool is not full, so the size clamp cannot be what stops ADD_DIE")
+	var held: Array = []
+	for d in done.dice:
+		held.append(d.title)
+	var unheld := 0
+	for b in Rules.Encounter.bonus_dice():
+		if not held.has(b.title):
+			unheld += 1
+	Check.check(unheld == 0,
+		"every bonus die is already in hand, so ADD_DIE has nothing to give")
+	var nadd := 0
+	for _i in 60:
+		for o in done.roll_rewards(rng):
+			if o["id"] == "ADD_DIE":
+				nadd += 1
+	Check.check(nadd == 0,
+		"so ADD_DIE is never offered -- 60 draws of three, and it appeared %d times"
+		% nadd)
 	Check.check(ids.size() == 3, "offers are distinct")
 
 	# Persistence round-trips through user://run.json.
