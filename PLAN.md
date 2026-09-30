@@ -129,10 +129,34 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
 > established; see the warning in `play/LISTING.md` about grepping the compiled
 > `.gdc`, which returns "absent" for everything including a control string.
 >
-> **Use `dicefate.aab`.** It is the one built after Phase 3. The naming is
-> actively backwards — the file called "release" is the older build — so the
-> artifact name is not evidence of anything; the mtime and the `fight.gdc`
-> delta are.
+> **Neither bundle is right for the touch-ergonomics leg, and this note
+> originally said "use `dicefate.aab`", which is only half true.** It is the
+> better of the two — built after Phase 3, where the release bundle is not — so
+> it is the one to sideload for the *juice* and *audio* bullets. But it was
+> built at 06:54:37 and the touch-target fix `79de3f5` landed at 12:19:12, so it
+> carries the same `custom_minimum_size = Vector2(0, 54)` this leg is supposed
+> to be validating. Testing touch targets on it measures the known-bad size.
+>
+> **Rebuild before the hardware pass — but a rebuild alone is not enough.**
+> This leg is a sideload onto a device, so unlike 4.3 it involves no Play
+> upload, no `versionCode`, and none of the reuse trap. That part is right. The
+> part that was wrong on the first pass: there is no path from here to a
+> sideloadable file. `export_presets.cfg` has exactly one Android preset and it
+> emits `build/android/dicefate.aab` — an **AAB**, which Android will not
+> install directly — and `bundletool` is not on this machine. So rebuilding
+> yields another AAB that still cannot be deployed.
+>
+> Getting an APK therefore needs one of: a second export preset writing `.apk`,
+> or `bundletool` installed to convert the AAB. The first means editing
+> `export_presets.cfg`, which is the file holding the release keystore password
+> in plaintext, so that is a call for the owner and not one to make silently.
+> Whichever is chosen, rebuild *after* it — the target file is
+> `dicefate.aab`, which is gitignored and therefore unrecoverable once
+> overwritten.
+>
+> The naming is actively backwards — the file called "release" is the older
+> build — so the artifact name is not evidence of anything; the mtime and the
+> `fight.gdc` delta are.
 
 ### 4.2 Web Demo & Community Feedback
 - Export to `build/web/` and publish an itch.io private playtest.

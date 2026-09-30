@@ -224,19 +224,37 @@ you are already playing.
       `dicefate.aab`.** Re-run `godot --headless --path . -s _pack.gd --
       Android` after any rebuild; it checks the export and boots the pack.
 
-      > **But it is one executable commit behind HEAD (checked 2026-09-30
-      > 15:4x), and the upload should be a decision, not a default.**
-      > `dicefate.aab` was built at **06:54:37**. BALANCE.md's item 7 — the
-      > kept change, and the only edit to `dice.gd` this session that changed
-      > what the game does — landed at **14:42:51** the same day. (A later
-      > commit, `acf1da9`, also touched `dice.gd`, but comments only; the other
-      > two commits since the build do not touch it at all.) The artifact is
-      > **7h48m older than the rules** and does not contain it: item 7 re-cuts
-      > Fang's top face from a
-      > flat `18` to a `15` carrying `pierce 6`. It is measured neutral
-      > (`<random>` 16.5% → 16.4%, every row within 0.5pp), so nothing is
-      > broken by uploading it — but the build and the repo no longer agree,
-      > and this note is the place that fact belongs.
+      > **But it is five executable commits behind HEAD (corrected
+      > 2026-09-30, was "one"), and the upload should be a decision.**
+      > `dicefate.aab` was built at **06:54:37**, sixteen minutes after Phase 3
+      > landed. Five commits after that build changed shipped code, across all
+      > three gameplay scripts:
+      >
+      > | commit | what a player would not get |
+      > |---|---|
+      > | `79de3f5` | the touch-target fix — `custom_minimum_size` goes `0, 54` → larger |
+      > | `73238fe` | three controls the ergonomics gate had never looked at |
+      > | `d035c37` | the named boss threshold and the boss haptic |
+      > | `599baac` | item 7: Fang's top face, `18` → a `15` carrying `pierce 6` |
+      > | `d6b3073` | the SFX pool size, which had claimed headroom nothing checked |
+      >
+      > `20fe68a` touches `game.gd` too but is 2 lines and comment-level.
+      > The earlier version of this note said "one executable commit" and named
+      > only item 7, which was true of `dice.gd` alone and wrong everywhere
+      > else: scoping the claim to one file is what hid the other four.
+      >
+      > **The touch-target row is the one that matters for a hardware pass.**
+      > The artifact still carries `custom_minimum_size = Vector2(0, 54)`, the
+      > size `79de3f5` changed precisely because it "cleared 540dp and failed on
+      > every other phone". PLAN 4.1's hardware leg is to validate touch
+      > ergonomics for Focus, Bank and Re-roll, so validating that on this
+      > bundle tests the known-broken size rather than the fix.
+      >
+      > On difficulty the gap is genuinely neutral: item 7 moved `<random>`
+      > 16.5% → 16.4% with every row within 0.5pp, and the other four do not
+      > touch the rules at all. So nothing is *broken* by uploading it — the
+      > build and the repo simply no longer agree, and that is what this note
+      > is for.
       >
       > **Do not silently rebuild under `versionCode` 5.** Play rejects a
       > second upload reusing a code, *and a rejected upload still counts as
