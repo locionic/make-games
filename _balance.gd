@@ -110,6 +110,60 @@ func _go() -> void:
 	# behaviour rather than a new die rule, which is also why this keeps landing
 	# on Phase 0.3's third bullet and not somewhere Phase 3 can polish.
 	#
+	# The first of those three was then built and priced, because it is the only
+	# one of the three the enemy can do on its own initiative, and a paragraph
+	# listing three options is not a measurement. Sandbox in /tmp/woundbench
+	# (never shipped): a per-die toggle opening a wound at full face value, the
+	# wound ignoring armour, and the enemy closing up to `wound_close` of them
+	# per turn -- healing for each -- before any wound pays. Close-before-pay,
+	# or there is no cost: a wound that has paid cannot be healed back. The
+	# control is a sunder toggle no policy ever presses, and it measures 16.5%
+	# and 7.69 to the decimal against this table's `<random>` row above, so the
+	# copy is faithful and every row below is a delta rather than a new baseline.
+	# It is also identical at every close rate, which is the check that the
+	# added rule consumes no randomness and leaks nothing between fights.
+	#
+	# The cost works, and knowing that is the new part. Closing the SMALLEST
+	# wound is a smooth monotone dial, and it halves the free lunch:
+	#
+	#   close/turn    0.0    0.25   0.5    0.75   1.0    2.0
+	#   wins%        39.2   36.8   27.9   19.9   13.9    0.1
+	#   avg depth     8.90  8.88   8.78   8.69   8.50   2.67
+	#
+	# Closing the LARGEST is a cliff, and the reason is worth keeping: a rate
+	# that matches the player's own opening rate makes the enemy unkillable.
+	# 43.8% of fights run to the 50-turn cap at 1.0, 93.1% at 2.0, on 85.7 and
+	# 119.2 wounds opened per fight, dealing 13.6 and 2.2 damage across the
+	# whole fight. The run dies to the clock rather than to the hit, which is
+	# a missing stalemate rule, not a cost that is working. A whole-number rate
+	# can only miss the player's rate or match it, which is why the sweep has
+	# to be fractional -- 0.5 closes one wound every other turn -- and the
+	# smallest-target row above is that sweep.
+	#
+	# But it prices the wound as a constant rather than as a decision, and that
+	# is the finding. `always` (sunder every die with damage on it) beats both
+	# counter-policies at all nine paired settings. `burst2` (sunder only the
+	# two biggest) is behind by 6.6 points at 0.0 and by 17.0 at 0.5. `armour`
+	# -- sunder only faces that already beat the enemy's armour, the exact
+	# policy the +21.6 audit above implies a player would read off the table --
+	# is worse still: 27.2% against 39.2% uncosted, and 4.0% against 27.9% at
+	# 0.5. Conditioning on the enemy is a LOSS, not a play.
+	#
+	# The reason is structural, and it is the part worth not rediscovering. The
+	# cost is charged per wound and is identical for every wound, so the enemy's
+	# rule can change how good sundering is but never when to do it. A decision
+	# needs a cost that varies with WHICH die or WHEN; this one is the same
+	# number every time, so the argmax is "sunder everything" everywhere along
+	# the dial. There is no close rate that produces a choice, because there is
+	# nothing for the player to choose between.
+	#
+	# Nor does the dial land the card in the table. The shipped cards run 7.7%
+	# (BASTION_HOLD) to 24.5% (ADD_DIE) on wins%, and 0.75 closes the smallest
+	# to 19.9% -- inside the band, between SHARPEN and ADD_DIE. Its depth is
+	# 8.69, against 8.01 for the deepest card row here, so the win rate can be
+	# dialled into the band and the depth never follows it down. Same shape as
+	# the cut, from the other end: not a card this game already has.
+	#
 	# It also cannot ship into the current build. build/android/dicefate.aab is
 	# signed, versionCode 5 is committed, and eight screenshots are shot against
 	# a roster that a doubling mechanic would re-balance. That is an unrequested
