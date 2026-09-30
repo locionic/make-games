@@ -131,12 +131,28 @@ func _run() -> void:
 	# Focus, end to end through the UI rather than the rules layer. The mode has
 	# to disarm itself, and a cancelled arm has to cost nothing -- a mode that
 	# leaked into the next tap would turn a re-roll into a focus.
+	#
+	# The hand is pinned, not rolled, because "a die has a strictly better
+	# face" is a property of a random draw and not of the code: every die that
+	# landed on its own maximum has nothing to step up to, and `can_focus`
+	# says no. The chance of all three unspent dice being on their best faces
+	# is about one in two hundred, so this failed roughly one run in the
+	# hundred-and-fifty the harness is run -- and because an assert() aborts
+	# `_run()` before `quit()`, a failure did not fail, it hung to the
+	# timeout. That is the worst shape a gate can have: rare, and silent about
+	# being rare. Face 0 is the cheapest face on any die, so a die sitting on
+	# it always has something above it, and the thing under test -- Focus,
+	# through the UI -- is unaffected by which face was chosen.
+	for i in panel.enc.dice.size():
+		if not panel.enc.dice[i].spent and i != panel.enc.banked:
+			panel.enc.dice[i].up = 0
+			break
 	var target := -1
 	for i in panel.enc.dice.size():
 		if panel.enc.can_focus(i):
 			target = i
 			break
-	assert(target >= 0, "the roll left at least one die focusable")
+	assert(target >= 0, "a die on face 0 always has a better face above it")
 	var was: int = panel.enc.dice[target].face().worth()
 	var charges: int = panel.enc.focus_left
 	panel._on_focus_pressed()
@@ -436,6 +452,30 @@ func _run() -> void:
 		assert(near, "the float lands on the control it describes, not the panel corner")
 	_grab(9, "fight-impact", SPARE)
 
+	# PLAN.md 4.1, the part of it that runs without a handset. "Touch
+	# ergonomics for the new buttons on small screens" is a claim about
+	# geometry, and every grab above photographs the fight at rest -- which
+	# shows a button is *present* and says nothing about whether it is big
+	# enough to hit, whether its label is cut off, or whether two of them
+	# have started to overlap. A screenshot cannot see any of that.
+	#
+	# This is the check `fight.gd:200` claims already exists ("Five across
+	# 508px is 96px each, which the labels below fit; that is checked, not
+	# assumed"). It was not. Nothing in the repo asserted a touch target
+	# until now -- `_rects.gd` reasons about the six-dice tight case in a
+	# comment and then only dumps rects for a human to read.
+	_ergonomics(plated, "four-dice hand")
+
+	# The tight case, and the last thing this file does. Six dice is where
+	# the cards are narrowest, so it is the only hand where a tap target can
+	# fall under the minimum. It runs after every grab on purpose: adding dice
+	# mutates the run, and anything below this line would inherit that.
+	game.run.apply_upgrade("ADD_DIE", game.rng)
+	game.run.apply_upgrade("ADD_DIE", game.rng)
+	game.show_fight()
+	await _settle()
+	_ergonomics(game.fight_panel, "six-dice hand")
+
 	if had_save:
 		DirAccess.copy_absolute(BACKUP, SAVE)
 		DirAccess.remove_absolute(BACKUP)
@@ -479,6 +519,79 @@ func _sfx_fired(game, name: String) -> bool:
 		if p.stream == game.SFX[name]:
 			return true
 	return false
+
+
+## Material's minimum touch target. 48dp is the number Android's own design
+## guidance gives and the one a fingertip can reliably land on; the game's
+## 540x960 canvas maps 1:1 to it, so a raw pixel comparison is the right one.
+const TOUCH_MIN := 48.0
+
+
+## Every tappable thing on the fight screen, read off the laid-out rects.
+##
+## Three claims, and none of them is "the button exists" -- a screenshot has
+## that already covered eight times over. A target is *big enough*, a label
+## *fits inside* it, and two targets do not *overlap*. The middle one is the
+## one that bites, because the buttons carry counts ("Focus (1)",
+## "Re-roll (1)") that grow with the run, and the row is fixed at five
+## across 508px: more text does not make the button wider, it makes the label
+## overflow. `get_combined_minimum_size` is the engine's own answer to "how
+## wide does this control want to be", so comparing it against what the
+## container actually granted catches a squeeze the moment it happens rather
+## than when someone squints at a PNG.
+func _ergonomics(panel, label: String) -> void:
+	var vp: Vector2 = panel.get_viewport_rect().size
+	# The narrowest and shortest thing a finger has to land on, measured rather
+	# than assumed. Printed at the end, because this is the number a hardware
+	# pass is arguing with and it is not otherwise recorded anywhere.
+	var smallest := Vector2(INF, INF)
+	var buttons: Array = [
+		panel.roll_btn, panel.focus_btn, panel.bank_btn,
+		panel.reroll_btn, panel.end_btn,
+	]
+	for b in buttons:
+		var c := b as Control
+		smallest = smallest.min(c.size)
+		assert(c.size.x >= TOUCH_MIN and c.size.y >= TOUCH_MIN,
+			"%s: '%s' is a %.0fx%.0f target, over the %.0f minimum"
+			% [label, b.text, c.size.x, c.size.y, TOUCH_MIN])
+		var r := c.get_global_rect()
+		assert(r.position.x >= 0.0 and r.position.y >= 0.0
+			and r.end.x <= vp.x and r.end.y <= vp.y,
+			"%s: '%s' fits the %.0fx%.0f screen (at %s)"
+			% [label, b.text, vp.x, vp.y, r])
+		assert(c.get_combined_minimum_size().x <= c.size.x,
+			"%s: '%s' label fits its %.0fpx button (wants %.0f)"
+			% [label, b.text, c.size.x, c.get_combined_minimum_size().x])
+
+	# Overlap, in both rows. A Container will happily hand two growing labels
+	# less width than their combined minimum and let them collide, which looks
+	# fine in a still and is unusable under a thumb.
+	for group in [buttons, panel.cards]:
+		for i in range(group.size()):
+			for j in range(i + 1, group.size()):
+				var a: Rect2 = (group[i] as Control).get_global_rect()
+				var b2: Rect2 = (group[j] as Control).get_global_rect()
+				assert(not a.intersects(b2),
+					"%s: target %d (%s) does not overlap %d (%s)"
+					% [label, i, (group[i] as Control).get_parent().get_name(),
+						j, (group[j] as Control).get_parent().get_name()])
+
+	# The cards are targets too, and they are the only thing in the row that
+	# changes width as the run does.
+	for c in panel.cards:
+		var card := c as Control
+		smallest = smallest.min(card.size)
+		assert(card.size.x >= TOUCH_MIN and card.size.y >= TOUCH_MIN,
+			"%s: card %d is a %.0fx%.0f target"
+			% [label, card.get_index(), card.size.x, card.size.y])
+
+	# Said out loud on the way past, so a green run records what it measured
+	# rather than only that it did not object. The numbers are the ones a
+	# hardware pass is then arguing with.
+	print("_ergonomics: %s -- %d buttons, %d dice, smallest target %.0fx%.0f, screen %.0fx%.0f"
+		% [label, buttons.size(), panel.cards.size(), smallest.x, smallest.y,
+			vp.x, vp.y])
 
 
 func _grab(n: int, name: String, dir: String = SHOTS) -> void:
