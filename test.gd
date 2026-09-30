@@ -3,6 +3,7 @@ extends SceneTree
 
 const Rules = preload("res://dice.gd")
 const RunState = preload("res://run.gd")
+const Check = preload("res://_check.gd")
 
 ## Every script in the project. `preload` only reads the rules layer, so a
 ## syntax error in the UI used to sail past this suite green and surface as a
@@ -23,13 +24,15 @@ func _init() -> void:
 	RunState.self_test()
 	for path in UI:
 		var s = load(path)
-		assert(s != null, "%s fails to load" % path)
+		Check.check(s != null, "%s fails to load" % path)
 		# `load()` hands back a non-null GDScript even when the parse failed, so
 		# a bare null check calls a broken file healthy. reload() re-parses and
 		# returns the real error. Scenes have no parse step.
 		if s is Script:
 			var err: Error = (s as Script).reload()
-			assert(err == OK, "%s fails to parse (error %d)" % [path, err])
+			Check.check(err == OK, "%s fails to parse (error %d)" % [path, err])
 	print("self_test: %d scripts load" % UI.size())
 	print("self_test: reached end")
-	quit()
+	# report() prints every failure and returns 0 or 1, so a broken suite exits
+	# non-zero instead of aborting _init() and hanging the SceneTree forever.
+	quit(Check.report("test.gd"))

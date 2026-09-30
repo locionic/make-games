@@ -1,5 +1,7 @@
 class_name Dice
 extends RefCounted
+const Check = preload("res://_check.gd")
+
 ## Pure rules for the dice-faces game. No UI, no scene tree -- so the
 ## interesting parts (reroll budget, armour, enemy behaviours, run hooks) can
 ## be asserted headless with: godot --headless --path . -s test.gd
@@ -652,54 +654,54 @@ static func self_test() -> void:
 	rng.seed = 12345
 
 	for d in Encounter.library():
-		assert(d.faces.size() == 6, "%s must have 6 faces" % d.title)
+		Check.check(d.faces.size() == 6, "%s must have 6 faces" % d.title)
 
 	for _i in 2000:
 		for d in Encounter.library():
 			d.roll(rng)
-			assert(d.up >= 0 and d.up < 6, "roll landed out of range")
+			Check.check(d.up >= 0 and d.up < 6, "roll landed out of range")
 
 	# Armour never yields negative damage, and it rewards swingy dice.
 	var w := Encounter.warden()
-	assert(w.pierce(3) == 0, "armour absorbs a weak hit entirely")
-	assert(w.pierce(9) == 5)
-	assert(w.pierce(12) > w.pierce(4), "swing must beat flat under armour")
-	assert(w.pierce(9, 2) == 7, "run pierce shaves the armour before it bites")
+	Check.check(w.pierce(3) == 0, "armour absorbs a weak hit entirely")
+	Check.check(w.pierce(9) == 5)
+	Check.check(w.pierce(12) > w.pierce(4), "swing must beat flat under armour")
+	Check.check(w.pierce(9, 2) == 7, "run pierce shaves the armour before it bites")
 
 	# Die helpers: worst face and forging.
 	var blade := Encounter.library()[0]
-	assert(blade.worst_index() == 0, "Blade's worst face is its 2")
+	Check.check(blade.worst_index() == 0, "Blade's worst face is its 2")
 	blade.forge()
-	assert(blade.faces[0].dmg == 3, "forge raises the weakest face by one")
+	Check.check(blade.faces[0].dmg == 3, "forge raises the weakest face by one")
 	blade.forge()
-	assert(blade.faces[0].dmg == 4, "forge keeps climbing the same face")
+	Check.check(blade.faces[0].dmg == 4, "forge keeps climbing the same face")
 
 	var e := Encounter.new(Encounter.grunt(), Encounter.library())
 	e.base_rerolls = 1
-	assert(e.rerolls_left == 1)
-	assert(e.can_reroll() == false, "nothing picked, no reroll")
+	Check.check(e.rerolls_left == 1)
+	Check.check(e.can_reroll() == false, "nothing picked, no reroll")
 	e.roll_all(rng)
 
 	# Budget: two picks, one reroll -> only the first is honoured.
 	e.toggle_pick(0)
 	e.toggle_pick(1)
-	assert(e.can_reroll())
+	Check.check(e.can_reroll())
 	e.resolve_rerolls(rng)
-	assert(e.rerolls_left == 0, "one reroll spent")
-	assert(e.spent_count() == 1, "only one die should have been re-rolled")
-	assert(e.can_reroll() == false, "budget exhausted")
+	Check.check(e.rerolls_left == 0, "one reroll spent")
+	Check.check(e.spent_count() == 1, "only one die should have been re-rolled")
+	Check.check(e.can_reroll() == false, "budget exhausted")
 
 	# A spent die cannot be queued and re-rolled again this turn.
 	e.toggle_pick(0)
 	e.toggle_pick(1)
 	e.resolve_rerolls(rng)
-	assert(e.spent_count() == 1, "no die may be re-rolled twice per turn")
+	Check.check(e.spent_count() == 1, "no die may be re-rolled twice per turn")
 
 	# Hex high faces grant re-rolls, so the budget can grow mid-turn.
 	var before := e.rerolls_left
 	e.dice[3].up = 5
 	e.resolve_faces()
-	assert(e.rerolls_left == before + 1, "Hex 6 should grant a re-roll")
+	Check.check(e.rerolls_left == before + 1, "Hex 6 should grant a re-roll")
 
 	# Ward contributes block, not damage. A fresh Encounter has every die on
 	# face 0, and the Grunt has no armour, so all three damaging faces land:
@@ -707,15 +709,15 @@ static func self_test() -> void:
 	var g := Encounter.new(Encounter.grunt(), Encounter.library())
 	var hp_before := g.enemy.hp
 	g.resolve_faces()
-	assert(g.enemy.hp == hp_before - 3, "Blade 2 + Hex 1 = 3 on a Grunt")
-	assert(g.block == 2, "Ward 2 should give 2 block and no damage")
+	Check.check(g.enemy.hp == hp_before - 3, "Blade 2 + Hex 1 = 3 on a Grunt")
+	Check.check(g.block == 2, "Ward 2 should give 2 block and no damage")
 
 	# Block is spent by the hit that absorbs it, never banked across turns.
 	g.take_turn(rng)
-	assert(g.block == 0, "block is consumed by the enemy's swing")
-	assert(g.hp == 20 - 1, "Grunt atk 3 minus 2 block = 1 through")
+	Check.check(g.block == 0, "block is consumed by the enemy's swing")
+	Check.check(g.hp == 20 - 1, "Grunt atk 3 minus 2 block = 1 through")
 	g.take_turn(rng)
-	assert(g.hp == 20 - 1 - 3, "a later swing with no block lands in full")
+	Check.check(g.hp == 20 - 1 - 3, "a later swing with no block lands in full")
 
 	# Armour is per-die, so Sunder's big faces beat Blade against the Warden.
 	var wd := Encounter.new(Encounter.warden(), Encounter.library())
@@ -723,26 +725,26 @@ static func self_test() -> void:
 	wd.dice[1].up = 2  # Sunder cleave 12
 	var hp2 := wd.enemy.hp
 	wd.resolve_faces()
-	assert(wd.enemy.hp == hp2 - 8, "12 - 4 armour = 8, Blade 2 fully absorbed")
+	Check.check(wd.enemy.hp == hp2 - 8, "12 - 4 armour = 8, Blade 2 fully absorbed")
 
 	# --- behaviours ---
 	# ARMOR_GROW raises armour each enemy turn.
 	var ag := Encounter.new(Enemy.new("Golem", 30, 3, 4, Enemy.BEH_ARMOR_GROW), Encounter.library())
 	var a0 := ag.enemy.armor
 	ag.take_turn(rng)
-	assert(ag.enemy.armor == a0 + 1, "armour grows every turn")
+	Check.check(ag.enemy.armor == a0 + 1, "armour grows every turn")
 
 	# ENRAGE raises attack each enemy turn.
 	var en := Encounter.new(Enemy.new("Rage", 30, 0, 4, Enemy.BEH_ENRAGE), Encounter.library())
 	var k0 := en.enemy.atk
 	en.take_turn(rng)
-	assert(en.enemy.atk == k0 + 1, "attack rages every turn")
+	Check.check(en.enemy.atk == k0 + 1, "attack rages every turn")
 
 	# LIFESTEAL heals the enemy for half the damage it deals.
 	var ls := Encounter.new(Enemy.new("Leech", 20, 0, 6, Enemy.BEH_LIFESTEAL), Encounter.library())
 	ls.enemy.hp = 10
 	ls.take_turn(rng)
-	assert(ls.enemy.hp > 10, "lifesteal heals after it hits")
+	Check.check(ls.enemy.hp > 10, "lifesteal heals after it hits")
 
 	# CURSE drags a die to its worst face.
 	var cu := Encounter.new(Enemy.new("Hexer", 30, 0, 3, Enemy.BEH_CURSE), Encounter.library())
@@ -752,7 +754,7 @@ static func self_test() -> void:
 	for d in cu.dice:
 		if d.up == d.worst_index():
 			any_cursed = true
-	assert(any_cursed, "curse drags at least one die to its worst face")
+	Check.check(any_cursed, "curse drags at least one die to its worst face")
 
 	# BRACE: the enemy arms itself on chip. Pool is Blade + Sunder throughout --
 	# Blade's faces are 2/3/4/5/7/9 and Sunder's are rust/1/12/1/rust/14 -- so
@@ -763,27 +765,27 @@ static func self_test() -> void:
 	br.dice[0].up = 2  # Blade 4
 	br.dice[1].up = 0  # Sunder rust
 	br.resolve_faces()
-	assert(br.enemy.armor == 1, "a BRACE takes one armour for the one chip")
+	Check.check(br.enemy.armor == 1, "a BRACE takes one armour for the one chip")
 	br.enemy.armor = 0
 	br.dice[0].up = 4  # Blade 7 -- a real hit, but neither chip nor heavy
 	br.dice[1].up = 2  # Sunder cleave 12
 	br.resolve_faces()
-	assert(br.enemy.armor == 0, "and none at all for a heavy hit")
+	Check.check(br.enemy.armor == 0, "and none at all for a heavy hit")
 	br.dice[1].up = 1  # Sunder 1
 	br.resolve_faces()
-	assert(br.enemy.armor == 1, "rust is not a hit and does not count; 1 is")
+	Check.check(br.enemy.armor == 1, "rust is not a hit and does not count; 1 is")
 
 	# The cap, or a chip-heavy pool walks the armour past every die it has.
 	br.enemy.armor = Enemy.ARMOR_GROW_CAP
 	br.resolve_faces()
-	assert(br.enemy.armor == Enemy.ARMOR_GROW_CAP, "armour never passes the cap")
+	Check.check(br.enemy.armor == Enemy.ARMOR_GROW_CAP, "armour never passes the cap")
 
 	# A BRACE is inert against an enemy that never reacts, so the rule cannot
 	# quietly apply to everything.
 	var nr := Encounter.new(Encounter.grunt(), [Encounter.library()[0]])
 	nr.dice[0].up = 2  # Blade 4
 	nr.resolve_faces()
-	assert(nr.enemy.armor == 0, "a plain enemy takes no reactive armour")
+	Check.check(nr.enemy.armor == 0, "a plain enemy takes no reactive armour")
 
 	# A banked die that cashes is a hit that landed, so it feeds the reaction too
 	# -- otherwise holding a die past a BRACE would be a free cheap hit.
@@ -791,24 +793,26 @@ static func self_test() -> void:
 		[Encounter.library()[1]])
 	rb.roll_all(rng)
 	rb.dice[0].up = 2  # cleave 12
-	assert(rb.toggle_bank(0), "held")
+	Check.check(rb.toggle_bank(0), "held")
 	rb.resolve_faces()  # the hold turn: no hit, so no reaction
-	assert(rb.enemy.armor == 0, "a held die does not feed the reaction")
+	Check.check(rb.enemy.armor == 0, "a held die does not feed the reaction")
 	rb.roll_all(rng)  # the roll that carries it
 	rb.dice[0].up = 1  # 1, so the next resolve chips
 	rb.resolve_faces()
-	assert(rb.enemy.armor == 1, "but the turn it cashes on does")
+	Check.check(rb.enemy.armor == 1, "but the turn it cashes on does")
 
 	# THORNS damages the enemy that hits you.
 	var th := Encounter.new(Encounter.grunt(), Encounter.library())
 	th.thorns = 5
 	var th_hp := th.enemy.hp
 	th.take_turn(rng)
-	assert(th.enemy.hp == th_hp - 5, "thorns reflect damage back")
+	Check.check(th.enemy.hp == th_hp - 5, "thorns reflect damage back")
 
 	_focus_tests()
 
-	print("dice.self_test: OK")
+	# The pass/fail verdict is Check.report()'s exit code, not this line.
+	print("dice.self_test: %d checks, %d failed"
+		% [Check.checks, Check.failures.size()])
 
 
 ## Focus: step a die to the next strictly-better face. Split out so the budget
@@ -821,7 +825,7 @@ static func _focus_tests() -> void:
 	e.focus_left = 2  ## hand-set: a run grants these, and this needs a second one
 	e.roll_all(RandomNumberGenerator.new())
 	# The whole point of the fight-long budget: rolling must not refill it.
-	assert(e.focus_left == 2, "a roll does not refill the focus charges")
+	Check.check(e.focus_left == 2, "a roll does not refill the focus charges")
 
 	# Sunder is the reason faces are ranked by worth and not by index. Its faces
 	# are [rust, 1, cleave, 1, rust, rend]; one step along the array from cleave
@@ -829,13 +833,13 @@ static func _focus_tests() -> void:
 	var sunder := e.dice[1]
 	sunder.up = 2  # cleave, 12
 	var worth_before: int = sunder.face().worth()
-	assert(e.focus_die(1))
-	assert(sunder.face().worth() > worth_before, "focus never moves a face down")
-	assert(sunder.face().label == "rend", "cleave focuses to rend, not to the 1 beside it")
-	assert(sunder.spent, "a focused die is spent, like a re-rolled one")
-	assert(e.focus_left == 1, "and one charge is gone")
-	assert(not e.can_focus(1), "no charge left")
-	assert(not e.focus_die(1), "a second focus is refused")
+	Check.check(e.focus_die(1))
+	Check.check(sunder.face().worth() > worth_before, "focus never moves a face down")
+	Check.check(sunder.face().label == "rend", "cleave focuses to rend, not to the 1 beside it")
+	Check.check(sunder.spent, "a focused die is spent, like a re-rolled one")
+	Check.check(e.focus_left == 1, "and one charge is gone")
+	Check.check(not e.can_focus(1), "no charge left")
+	Check.check(not e.focus_die(1), "a second focus is refused")
 
 	# A die already on its best face cannot be focused, so it cannot eat the
 	# charge. Fang's 18 and Blade's 9 are the cases a player will hit first.
@@ -850,10 +854,10 @@ static func _focus_tests() -> void:
 				if die.faces[j].worth() > die.faces[top].worth():
 					top = j
 			f.dice[0].up = top
-			assert(not f.can_focus(0), "%s on its best face has nowhere to focus" % die.title)
-			assert(not f.focus_die(0), "%s stays put" % die.title)
-			assert(f.dice[0].up == top, "%s is not consumed by a refused focus" % die.title)
-			assert(f.focus_left == 1, "%s keeps the charge" % die.title)
+			Check.check(not f.can_focus(0), "%s on its best face has nowhere to focus" % die.title)
+			Check.check(not f.focus_die(0), "%s stays put" % die.title)
+			Check.check(f.dice[0].up == top, "%s is not consumed by a refused focus" % die.title)
+			Check.check(f.focus_left == 1, "%s keeps the charge" % die.title)
 
 	# Every die, every face: focusing must strictly increase worth, or land on a
 	# die that is already maxed. That is the whole safety property.
@@ -867,7 +871,7 @@ static func _focus_tests() -> void:
 				g.dice[0].up = j
 				var w: int = die.faces[j].worth()
 				if g.focus_die(0):
-					assert(die.faces[g.dice[0].up].worth() > w,
+					Check.check(die.faces[g.dice[0].up].worth() > w,
 						"%s face %d focused up, not sideways" % [die.title, j])
 
 	_bank_tests()
@@ -895,7 +899,7 @@ static func _rush_tests() -> void:
 	top.dice[0].up = 5  ## Blade 9, the maximum
 	top.toggle_pick(0)
 	top.resolve_rerolls(_seeded(11))
-	assert(top.dice[0].rushed == 0, "a re-roll from Blade's best face earns nothing")
+	Check.check(top.dice[0].rushed == 0, "a re-roll from Blade's best face earns nothing")
 
 	# The scaling: the mark is the gain, not a flag. Sunder is 0,1,12,1,0,14, so
 	# pinning face 1 and re-rolling to face 2 is a gain of 11 and face 5 is 13.
@@ -906,7 +910,7 @@ static func _rush_tests() -> void:
 	sc.toggle_pick(0)
 	sc.resolve_rerolls(_seeded(5))
 	var step: int = sc.dice[0].face().worth() - 1
-	assert(sc.dice[0].rushed == maxi(0, step), "the mark is the size of the gain, not a yes/no")
+	Check.check(sc.dice[0].rushed == maxi(0, step), "the mark is the size of the gain, not a yes/no")
 
 	# The true branch, as an invariant over many seeds: from Blade 2 the mark is
 	# positive if and only if the new face is worth more. Asserted as the rule
@@ -920,11 +924,11 @@ static func _rush_tests() -> void:
 		g.toggle_pick(0)
 		g.resolve_rerolls(_seeded(s))
 		var landed: int = g.dice[0].face().worth() - 2
-		assert(g.dice[0].rushed == maxi(0, landed),
+		Check.check(g.dice[0].rushed == maxi(0, landed),
 			"the mark is set exactly when the re-roll beat the face it replaced")
 		if landed > 0:
 			better += 1
-	assert(better > 0, "and the better branch is actually reachable")
+	Check.check(better > 0, "and the better branch is actually reachable")
 
 	# The money line: the same dice and faces, card off and card on. A Blade 2
 	# into a warden's 4 armour deals nothing at all, which is what makes this the
@@ -934,7 +938,7 @@ static func _rush_tests() -> void:
 	off.dice[0].up = 0
 	var hp0: int = off.enemy.hp
 	off.resolve_faces()
-	assert(off.enemy.hp == hp0, "without the card, a Blade 2 into armour 4 deals nothing")
+	Check.check(off.enemy.hp == hp0, "without the card, a Blade 2 into armour 4 deals nothing")
 
 	var on := Encounter.new(Encounter.warden(), [lib[0]])
 	on.rush = true
@@ -943,12 +947,12 @@ static func _rush_tests() -> void:
 	on.dice[0].rushed = 1  ## 2 -> 3, the smallest gain there is
 	on.resolve_faces()
 	var want: int = maxi(Encounter.RUSH_FLOOR, 1 / Encounter.RUSH_SHARE)
-	assert(on.enemy.hp == hp0 - want,
+	Check.check(on.enemy.hp == hp0 - want,
 		"and with it, the same face adds %d through the armour that swallowed it" % want)
 	# The floor earns its keep: a gain of 1 halves to zero, and a bonus that can
 	# round away to nothing is not a bonus.
-	assert(want == Encounter.RUSH_FLOOR, "a one-point gain still pays the floor")
-	assert(on.dice[0].rushed == 0, "the mark is paid out once and cleared")
+	Check.check(want == Encounter.RUSH_FLOOR, "a one-point gain still pays the floor")
+	Check.check(on.dice[0].rushed == 0, "the mark is paid out once and cleared")
 
 
 ## A seeded RNG, so the tests that care about *what* was rolled can say so
@@ -965,18 +969,18 @@ static func _bastion_tests() -> void:
 	var lib := Encounter.library()
 	var k := Encounter.new(Encounter.warden(), [lib[2], lib[0]])  ## Ward, then Blade
 	k.bastion = true
-	assert(k.toggle_bank(0), "the first hold lands")
-	assert(k.block == Encounter.BASTION_BLOCK, "and pays %d block on the spot" % Encounter.BASTION_BLOCK)
+	Check.check(k.toggle_bank(0), "the first hold lands")
+	Check.check(k.block == Encounter.BASTION_BLOCK, "and pays %d block on the spot" % Encounter.BASTION_BLOCK)
 	k.toggle_bank(0)
-	assert(k.block == Encounter.BASTION_BLOCK, "releasing it does not pay again")
-	assert(k.toggle_bank(1), "holding a second die displaces the first")
-	assert(k.block == Encounter.BASTION_BLOCK * 2, "and pays for the new one")
-	assert(not k.toggle_bank(9), "an out-of-range tap is refused outright")
-	assert(k.block == Encounter.BASTION_BLOCK * 2, "and a refused tap pays nothing")
+	Check.check(k.block == Encounter.BASTION_BLOCK, "releasing it does not pay again")
+	Check.check(k.toggle_bank(1), "holding a second die displaces the first")
+	Check.check(k.block == Encounter.BASTION_BLOCK * 2, "and pays for the new one")
+	Check.check(not k.toggle_bank(9), "an out-of-range tap is refused outright")
+	Check.check(k.block == Encounter.BASTION_BLOCK * 2, "and a refused tap pays nothing")
 
 	var plain := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
 	plain.toggle_bank(0)
-	assert(plain.block == 0, "without the card, banking is still just deferral")
+	Check.check(plain.block == 0, "without the card, banking is still just deferral")
 
 
 ## Exposed (PRECISE_STRIKE): a hit of EXPOSE_AT makes the next turn's hits worth
@@ -995,14 +999,14 @@ static func _expose_tests() -> void:
 	x.dice[1].up = 5  ## Blade 9
 	x.enemy.hp = 30
 	x.resolve_faces()
-	assert(x.enemy.exposed == 1, "a face of 12 exposes the enemy")
+	Check.check(x.enemy.exposed == 1, "a face of 12 exposes the enemy")
 	var armour: int = x.enemy.armor
 	x.take_turn(RandomNumberGenerator.new())
 	x.roll_all(RandomNumberGenerator.new())
 	# The window has to still be open here. It is closed by the resolve that
 	# spends it, not by the roll or the enemy's turn -- and the version that got
 	# it wrong passed every other line of this test while paying out nothing.
-	assert(x.enemy.exposed == 1, "and the window survives the enemy's turn and the next roll")
+	Check.check(x.enemy.exposed == 1, "and the window survives the enemy's turn and the next roll")
 	# ...and that it pays. This is the line the never-firing version passed: the
 	# flag was set and cleared correctly the whole time, and no damage was ever
 	# collected through it, so only the enemy's health tells the truth.
@@ -1016,31 +1020,31 @@ static func _expose_tests() -> void:
 	# 12 -> 18 and 2 -> 3, so 21. Unexposed it would have been 8 + 0 against a
 	# warden's 4. The chip gaining 3 is not a mistake: it is why the window is
 	# never a downside, and why the card is worth a slot at all.
-	assert(x.enemy.hp == before - 21,
+	Check.check(x.enemy.hp == before - 21,
 		"a 12 and a 2 through armour %d land 21 while exposed, not %d" % [
 			armour, maxi(0, 12 - armour) + maxi(0, 2 - armour)])
 
 	# The window actually opened: an exposed hit is worth more than a flat one, and
 	# an unexposed one is still flattened by the same armour.
-	assert(x.enemy.armor == armour, "the armour never left -- only the hit got past it")
+	Check.check(x.enemy.armor == armour, "the armour never left -- only the hit got past it")
 	var y := Encounter.new(Encounter.warden(), [lib[1]])
 	y.roll_all(RandomNumberGenerator.new())
 	y.dice[0].up = 2
 	y.resolve_faces()
-	assert(y.enemy.exposed == 0, "without the upgrade nothing exposes anything")
+	Check.check(y.enemy.exposed == 0, "without the upgrade nothing exposes anything")
 	y.precision = true
 	y.roll_all(RandomNumberGenerator.new())
 	y.dice[0].up = 2
 	y.enemy.exposed = 0
 	y.resolve_faces()
 	var through: int = y.enemy.pierce(12, 0)
-	assert(through == 18, "exposed, a 12 goes through as 18")
+	Check.check(through == 18, "exposed, a 12 goes through as 18")
 	y.enemy.exposed = 0
-	assert(y.enemy.pierce(12, 0) == maxi(0, 12 - armour), "and is a flat 12 less armour once it lapses")
+	Check.check(y.enemy.pierce(12, 0) == maxi(0, 12 - armour), "and is a flat 12 less armour once it lapses")
 	# A stacked PIERCE must not apply on top of Exposed, or the card would read as
 	# "+1 armour ignored" as well and the two would never be separable.
 	y.enemy.exposed = 1
-	assert(y.enemy.pierce(12, 5) == 18, "a stacked PIERCE does not apply on top of exposed")
+	Check.check(y.enemy.pierce(12, 5) == 18, "a stacked PIERCE does not apply on top of exposed")
 
 	# The threshold is a single face, not the turn total: five faces under it that
 	# add up to more must not count, or any wide pool would expose for free.
@@ -1050,9 +1054,9 @@ static func _expose_tests() -> void:
 	for i in z.dice.size():
 		z.dice[i].up = 5  ## Blade 9
 	z.resolve_faces()
-	assert(z.enemy.exposed == 0, "36 damage in five faces is not a hit of 10")
+	Check.check(z.enemy.exposed == 0, "36 damage in five faces is not a hit of 10")
 	# Blade at its best is 9, one short -- which is the gap SHARPEN exists to close.
-	assert(lib[0].faces[5].worth() < Encounter.EXPOSE_AT, "Blade alone cannot reach the threshold")
+	Check.check(lib[0].faces[5].worth() < Encounter.EXPOSE_AT, "Blade alone cannot reach the threshold")
 
 
 ## A paired face doubles while another die shows the same number. Item 8.
@@ -1063,8 +1067,8 @@ static func _expose_tests() -> void:
 ## the rule compares raw `dmg` and a doubled face has no raw number to match.
 static func _pair_tests() -> void:
 	var fang: Die = Encounter.bonus_dice()[2]
-	assert(fang.faces[2].pairs, "Fang's 5 is the paired face")
-	assert(fang.faces[2].dmg == 5, "and it is the 5, not something else on the die")
+	Check.check(fang.faces[2].pairs, "Fang's 5 is the paired face")
+	Check.check(fang.faces[2].dmg == 5, "and it is the 5, not something else on the die")
 	# Nothing else in the roster may carry the flag: a second one is a second flat
 	# power add, which is the failure item 6 died of.
 	var tagged := 0
@@ -1074,27 +1078,27 @@ static func _pair_tests() -> void:
 	for d in Encounter.bonus_dice():
 		for f in d.faces:
 			tagged += 1 if f.pairs else 0
-	assert(tagged == 1, "exactly one face in the whole roster pairs")
+	Check.check(tagged == 1, "exactly one face in the whole roster pairs")
 
 	# Alone: 5, not 10, and not one damage more.
 	var solo := Encounter.new(Encounter.grunt(), [fang.copy()])
 	solo.dice[0].up = 2
-	assert(solo.pair_bonus(0) == 0, "a lone 5 has no partner, so it is not doubled")
+	Check.check(solo.pair_bonus(0) == 0, "a lone 5 has no partner, so it is not doubled")
 	solo.enemy.hp = 30
 	solo.resolve_faces()
-	assert(solo.enemy.hp == 25, "and it deals 5 (seed-independent, faces are pinned)")
+	Check.check(solo.enemy.hp == 25, "and it deals 5 (seed-independent, faces are pinned)")
 
 	# Paired: doubles, and the damage is real rather than a flag.
 	var duo := Encounter.new(Encounter.grunt(), [fang.copy(), Encounter.library()[0]])
 	duo.dice[0].up = 2  ## Fang 5
 	duo.dice[1].up = 3  ## Blade 5, the only partner a starter can offer
-	assert(duo.pair_bonus(0) == 5, "a matched 5 pays its own value again")
-	assert(duo.face_hit(0) == 10, "so the die is worth 10 while the pair holds")
-	assert(duo.pair_bonus(1) == 0, "the partner is not itself a paired face")
-	assert(duo.face_hit(1) == 5, "and it deals its own 5, undoubled")
+	Check.check(duo.pair_bonus(0) == 5, "a matched 5 pays its own value again")
+	Check.check(duo.face_hit(0) == 10, "so the die is worth 10 while the pair holds")
+	Check.check(duo.pair_bonus(1) == 0, "the partner is not itself a paired face")
+	Check.check(duo.face_hit(1) == 5, "and it deals its own 5, undoubled")
 	duo.enemy.hp = 30
 	duo.resolve_faces()
-	assert(duo.enemy.hp == 15, "5 + 5 + the doubled 5 is 15 (flag-only tests miss this)")
+	Check.check(duo.enemy.hp == 15, "5 + 5 + the doubled 5 is 15 (flag-only tests miss this)")
 
 	# The partner can be a *held* die. The hold is a decision about what is on
 	# the board, and a die that is visibly sitting on 5 next to Fang's 5 is a
@@ -1102,25 +1106,39 @@ static func _pair_tests() -> void:
 	var held := Encounter.new(Encounter.grunt(), [fang.copy(), Encounter.library()[0]])
 	held.dice[0].up = 2
 	held.dice[1].up = 3
-	assert(held.toggle_bank(1), "Blade can be held")
-	assert(held.pair_bonus(0) == 5, "a held die still pairs -- it is on the board")
+	Check.check(held.toggle_bank(1), "Blade can be held")
+	Check.check(held.pair_bonus(0) == 5, "a held die still pairs -- it is on the board")
 
 	# A second Fang 5 does not feed the first. Compared raw, so the doubling
 	# cannot be earned twice off one hand.
 	var two := Encounter.new(Encounter.grunt(), [fang.copy(), fang.copy()])
 	two.dice[0].up = 2
 	two.dice[1].up = 2
-	assert(two.pair_bonus(0) == 5 and two.pair_bonus(1) == 5,
+	Check.check(two.pair_bonus(0) == 5 and two.pair_bonus(1) == 5,
 		"two matched 5s each pair, and neither doubles twice")
+
+	# The reason the face is `5` and not `11`: doubled, it lands exactly on
+	# EXPOSE_AT, so a pair is a route into Exposed that does not run through
+	# SHARPEN. Asserted rather than asserted-about, because this is the whole
+	# argument for the die and `hardest` has to be reading `face_hit` for it to
+	# hold -- `hardest` reading `f.dmg` would leave the pairing invisible to
+	# PRECISE_STRIKE and this test would be the only thing saying it worked.
+	var pe := Encounter.new(Encounter.grunt(), [fang.copy(), Encounter.library()[0]])
+	pe.precision = true
+	pe.dice[0].up = 2  ## Fang 5
+	pe.dice[1].up = 3  ## Blade 5
+	pe.enemy.hp = 60
+	pe.resolve_faces()
+	assert(pe.enemy.exposed == 1, "a doubled 5 reaches EXPOSE_AT and exposes")
 
 	# And it moves with the board: break the pair and the bonus is gone, so this
 	# is a thing the player watches rather than a stat on the card.
 	var breakable := Encounter.new(Encounter.grunt(), [fang.copy(), Encounter.library()[0]])
 	breakable.dice[0].up = 2
 	breakable.dice[1].up = 3
-	assert(breakable.pair_bonus(0) > 0, "paired to start")
+	Check.check(breakable.pair_bonus(0) > 0, "paired to start")
 	breakable.dice[1].up = 4  ## Blade 7
-	assert(breakable.pair_bonus(0) == 0, "and unpaired the moment the partner moves")
+	Check.check(breakable.pair_bonus(0) == 0, "and unpaired the moment the partner moves")
 
 
 ## Banking: hold one die a turn. The property that makes it a hold rather than a
@@ -1136,27 +1154,27 @@ static func _bank_tests() -> void:
 	b.roll_all(rng)
 	# Pin the face so the test is about the hold, not the dice.
 	b.dice[0].up = 4  ## 7 block
-	assert(b.toggle_bank(0), "a die can be held")
-	assert(b.banked == 0, "and the slot takes it")
+	Check.check(b.toggle_bank(0), "a die can be held")
+	Check.check(b.banked == 0, "and the slot takes it")
 
 	var held_label: String = b.dice[0].face().label
 	var held_worth: int = b.dice[0].face().worth()
 	var free_worth: int = b.dice[1].face().worth()
 	b.resolve_faces()
-	assert(b.block == b.dice[1].face().block, "a held die resolves nothing this turn")
-	assert(b.banked == 0, "and the slot keeps it -- paying now would make holding a no-op")
+	Check.check(b.block == b.dice[1].face().block, "a held die resolves nothing this turn")
+	Check.check(b.banked == 0, "and the slot keeps it -- paying now would make holding a no-op")
 
 	# ...on the next turn, and only then.
 	b.take_turn(rng)
 	b.roll_all(rng)
-	assert(b.dice[0].face().worth() == held_worth,
+	Check.check(b.dice[0].face().worth() == held_worth,
 		"the held die kept its face through the next roll (%s)" % held_label)
-	assert(b.dice[0].face().label == held_label, "same face, same word")
-	assert(b.dice[1].face().worth() != free_worth,
+	Check.check(b.dice[0].face().label == held_label, "same face, same word")
+	Check.check(b.dice[1].face().worth() != free_worth,
 		"while the unheld die was re-rolled, so the hold is what held it")
 	b.resolve_faces()
-	assert(b.banked == -1, "cashing empties the slot for the next hold")
-	assert(b.block >= held_worth, "and the held die paid out in full a turn later")
+	Check.check(b.banked == -1, "cashing empties the slot for the next hold")
+	Check.check(b.block >= held_worth, "and the held die paid out in full a turn later")
 
 	# A CURSE enemy must not reach past the hold. It picks a die at random and
 	# drags it to its worst face, which silently breaks the one thing the player
@@ -1179,7 +1197,7 @@ static func _bank_tests() -> void:
 			if cu2.dice[0].faces[j].worth() > cu2.dice[0].faces[top].worth():
 				top = j
 		cu2.dice[0].up = top
-		assert(cu2.toggle_bank(0), "a die can be held against a curse")
+		Check.check(cu2.toggle_bank(0), "a die can be held against a curse")
 		var want: String = cu2.dice[0].face().label
 		var before: Array = cu2.dice.map(func(d): return d.face().label)
 		cu2._curse_one(r2)
@@ -1188,29 +1206,29 @@ static func _bank_tests() -> void:
 		if cu2.dice[1].face().label != before[1] or cu2.dice[2].face().label != before[2] \
 				or cu2.dice[3].face().label != before[3]:
 			cursed += 1
-		assert(cu2.dice[0].face().label == want,
+		Check.check(cu2.dice[0].face().label == want,
 			"a curse cannot move a held die (seed %d)" % s)
-		assert(cu2.banked == 0, "and the hold is still holding")
-		assert(cu2.toggle_bank(0), "and it can still be released")
-	assert(cursed > 20, "the curse still bites the rest of the hand, not just the hold")
+		Check.check(cu2.banked == 0, "and the hold is still holding")
+		Check.check(cu2.toggle_bank(0), "and it can still be released")
+	Check.check(cursed > 20, "the curse still bites the rest of the hand, not just the hold")
 
 	# A second tap releases, so a mis-tap does not cost the turn.
 	var c := Encounter.new(Encounter.grunt(), Encounter.library())
 	c.roll_all(RandomNumberGenerator.new())
-	assert(c.toggle_bank(0))
-	assert(c.toggle_bank(0), "tapping it again releases it")
-	assert(c.banked == -1, "and the slot is free again")
+	Check.check(c.toggle_bank(0))
+	Check.check(c.toggle_bank(0), "tapping it again releases it")
+	Check.check(c.banked == -1, "and the slot is free again")
 	c.resolve_faces()
-	assert(c.block > 0 or c.enemy.hp < c.enemy.max_hp, "a released die resolves normally")
+	Check.check(c.block > 0 or c.enemy.hp < c.enemy.max_hp, "a released die resolves normally")
 
 	# The one-slot rule, and the two things a held die must not also be.
 	var d := Encounter.new(Encounter.grunt(), Encounter.library())
 	d.roll_all(RandomNumberGenerator.new())
 	d.focus_left = 1
-	assert(d.toggle_bank(0))
-	assert(d.toggle_bank(1), "a second die displaces the first")
-	assert(d.banked == 1, "the slot holds the newer die")
-	assert(not d.can_focus(1), "a held die cannot also be focused")
+	Check.check(d.toggle_bank(0))
+	Check.check(d.toggle_bank(1), "a second die displaces the first")
+	Check.check(d.banked == 1, "the slot holds the newer die")
+	Check.check(not d.can_focus(1), "a held die cannot also be focused")
 	d.toggle_pick(1)
-	assert(not d.picks[1], "a held die cannot also be queued for a re-roll")
-	assert(not d.toggle_bank(9), "out of range is refused, not a crash")
+	Check.check(not d.picks[1], "a held die cannot also be queued for a re-roll")
+	Check.check(not d.toggle_bank(9), "out of range is refused, not a crash")

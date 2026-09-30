@@ -9,6 +9,7 @@ extends RefCounted
 ## run on a fresh checkout has not built the global class cache.
 
 const Rules = preload("res://dice.gd")
+const Check = preload("res://_check.gd")
 
 ## Where the player's run history lives. A static var, not a const, so the
 ## headless suite can point it at a scratch file: `self_test` calls `record_run`,
@@ -454,46 +455,46 @@ static func self_test() -> void:
 	rng.seed = 99
 
 	var r := new()
-	assert(r.dice.size() == 4, "a run starts with the four library dice")
-	assert(r.depth == 0 and r.hp == 20)
+	Check.check(r.dice.size() == 4, "a run starts with the four library dice")
+	Check.check(r.depth == 0 and r.hp == 20)
 
 	# The table escalates and ends in a boss.
-	assert(r.enemy_for(0).title == "Grunt")
-	assert(r.enemy_for(FINAL_DEPTH).title == "The Devourer", "last fight is the boss")
+	Check.check(r.enemy_for(0).title == "Grunt")
+	Check.check(r.enemy_for(FINAL_DEPTH).title == "The Devourer", "last fight is the boss")
 	for d in FINAL_DEPTH + 1:
 		var e := r.enemy_for(d)
-		assert(e.hp > 0, "every enemy has health")
+		Check.check(e.hp > 0, "every enemy has health")
 
 	# A daily is the same run for everyone on that day, and never lets the boss
 	# out early. Same seed, same enemy order, opener included.
 	var daily_a := new(12345)
 	var daily_b := new(12345)
-	assert(daily_a.order == daily_b.order, "the same seed gives the same daily")
-	assert(daily_a.order.size() == FINAL_DEPTH, "all eight non-boss fights are ordered")
+	Check.check(daily_a.order == daily_b.order, "the same seed gives the same daily")
+	Check.check(daily_a.order.size() == FINAL_DEPTH, "all eight non-boss fights are ordered")
 	var placed := {}
 	for d in daily_a.order:
 		placed[d] = true
-	assert(placed.size() == FINAL_DEPTH, "each enemy appears exactly once")
-	assert(daily_a.enemy_for(0).title == daily_b.enemy_for(0).title, "same opener")
-	assert(daily_a.enemy_for(FINAL_DEPTH).title == "The Devourer", "the boss is still last")
-	assert(not new().is_daily(), "a run with no seed is not a daily")
-	assert(daily_a.share_text(3, false).contains("daily #12345"), "a daily says so")
-	assert(new().share_text(3, false).contains("free run"), "a free run says so")
+	Check.check(placed.size() == FINAL_DEPTH, "each enemy appears exactly once")
+	Check.check(daily_a.enemy_for(0).title == daily_b.enemy_for(0).title, "same opener")
+	Check.check(daily_a.enemy_for(FINAL_DEPTH).title == "The Devourer", "the boss is still last")
+	Check.check(not new().is_daily(), "a run with no seed is not a daily")
+	Check.check(daily_a.share_text(3, false).contains("daily #12345"), "a daily says so")
+	Check.check(new().share_text(3, false).contains("free run"), "a free run says so")
 
 	# start_fight carries the run's stats into the encounter.
 	var f0 := r.start_fight()
-	assert(f0.enemy.title == "Grunt")
-	assert(f0.pierce == r.pierce and f0.thorns == r.thorns)
-	assert(f0.base_rerolls == r.base_rerolls)
-	assert(f0.base_focus == r.base_focus)
+	Check.check(f0.enemy.title == "Grunt")
+	Check.check(f0.pierce == r.pierce and f0.thorns == r.thorns)
+	Check.check(f0.base_rerolls == r.base_rerolls)
+	Check.check(f0.base_focus == r.base_focus)
 	# ...and the card's flag has to be carried with them. Every Exposed test in
 	# dice.gd sets `precision` on the encounter by hand, so a start_fight that
 	# forgot this line would leave the card inert in a real run with the whole
 	# suite still green -- which is the failure mode the bench found once already.
-	assert(not f0.precision, "a run without the card exposes nothing")
+	Check.check(not f0.precision, "a run without the card exposes nothing")
 	r.apply_upgrade("PRECISE_STRIKE", RandomNumberGenerator.new())
-	assert(r.start_fight().precision, "and a run that took it carries it into the fight")
-	assert(upgrade_by_id("PRECISE_STRIKE")["id"] == "PRECISE_STRIKE",
+	Check.check(r.start_fight().precision, "and a run that took it carries it into the fight")
+	Check.check(upgrade_by_id("PRECISE_STRIKE")["id"] == "PRECISE_STRIKE",
 		"the card is in the offer pool, not just in this test")
 	f0 = r.start_fight()
 
@@ -501,18 +502,18 @@ static func self_test() -> void:
 		var c_run := new()
 		c_run.apply_upgrade(id, RandomNumberGenerator.new())
 		var c: Rules.Encounter = c_run.start_fight()
-		assert(c.bastion == (id == "BASTION_HOLD"), "%s carries its flag" % id)
-		assert(c.rush == (id == "GAMBLERS_RUSH"), "%s carries its flag" % id)
+		Check.check(c.bastion == (id == "BASTION_HOLD"), "%s carries its flag" % id)
+		Check.check(c.rush == (id == "GAMBLERS_RUSH"), "%s carries its flag" % id)
 	# A fresh encounter must not inherit the previous fight's unspent charge.
 	# Park the die on face 0 first: Blade can roll a 9, which is already its best
 	# face, and a refused focus would make this assert depend on the roll.
 	f0.roll_all(RandomNumberGenerator.new())
 	f0.dice[0].up = 0
 	f0.focus_die(0)
-	assert(f0.focus_left == r.base_focus - 1, "spending a focus uses one charge")
+	Check.check(f0.focus_left == r.base_focus - 1, "spending a focus uses one charge")
 	var f_next := r.start_fight()
 	f_next.roll_all(RandomNumberGenerator.new())
-	assert(f_next.focus_left == r.base_focus, "and the next fight starts with a full charge")
+	Check.check(f_next.focus_left == r.base_focus, "and the next fight starts with a full charge")
 
 	# Fight state must not survive into the next fight. Before this, `Encounter`
 	# aliased the run's Die objects, so a die re-rolled in one fight came into
@@ -520,16 +521,16 @@ static func self_test() -> void:
 	f0.roll_all(rng)
 	f0.picks[0] = true
 	f0.resolve_rerolls(rng)
-	assert(f0.dice[0].spent, "the re-rolled die is spent this fight")
+	Check.check(f0.dice[0].spent, "the re-rolled die is spent this fight")
 	var f1 := r.start_fight()
 	for d in f1.dice:
-		assert(not d.spent, "a new fight starts with no die already spent")
-	assert(r.dice[0].spent == false, "the run's pool is never marked spent")
+		Check.check(not d.spent, "a new fight starts with no die already spent")
+	Check.check(r.dice[0].spent == false, "the run's pool is never marked spent")
 
 	# Upgrades each do what they claim.
 	var before_dice := r.dice.size()
 	r.apply_upgrade("ADD_DIE", rng)
-	assert(r.dice.size() == before_dice + 1, "ADD_DIE grows the pool")
+	Check.check(r.dice.size() == before_dice + 1, "ADD_DIE grows the pool")
 
 	var blade: Rules.Die = r.dice[0]
 	var blade_min := 999
@@ -539,7 +540,7 @@ static func self_test() -> void:
 	var blade_min2 := 999
 	for f in blade.faces:
 		blade_min2 = mini(blade_min2, f.dmg)
-	assert(blade_min2 == blade_min + 1, "SHARPEN lifts every damage face")
+	Check.check(blade_min2 == blade_min + 1, "SHARPEN lifts every damage face")
 
 	var ward: Rules.Die = r.dice[2]
 	var blk0 := 0
@@ -549,71 +550,71 @@ static func self_test() -> void:
 	var blk1 := 0
 	for f in ward.faces:
 		blk1 += f.block
-	assert(blk1 == blk0 + 6, "BLESS lifts all six block faces")
+	Check.check(blk1 == blk0 + 6, "BLESS lifts all six block faces")
 
 	var rr0 := r.base_rerolls
 	r.apply_upgrade("FOCUS", rng)
-	assert(r.base_rerolls == rr0 + 1, "FOCUS adds a re-roll")
+	Check.check(r.base_rerolls == rr0 + 1, "FOCUS adds a re-roll")
 
 	var mh0 := r.max_hp
 	r.apply_upgrade("VIGOR", rng)
-	assert(r.max_hp == mh0 + 8, "VIGOR adds max health")
+	Check.check(r.max_hp == mh0 + 8, "VIGOR adds max health")
 
 	var pi0 := r.pierce
 	r.apply_upgrade("PIERCE", rng)
-	assert(r.pierce == pi0 + 1, "PIERCE adds armour penetration")
+	Check.check(r.pierce == pi0 + 1, "PIERCE adds armour penetration")
 
 	var th0 := r.thorns
 	r.apply_upgrade("BULWARK", rng)
-	assert(r.thorns == th0 + 4, "BULWARK reflects damage")
+	Check.check(r.thorns == th0 + 4, "BULWARK reflects damage")
 
 	r.apply_upgrade("REFORGE", rng)
-	assert(r.upgrades.has("REFORGE"), "REFORGE is recorded")
+	Check.check(r.upgrades.has("REFORGE"), "REFORGE is recorded")
 
 	var mh1 := r.max_hp
 	r.hp = 1
 	r.apply_upgrade("MEND", rng)
-	assert(r.hp == 15 and r.max_hp == mh1, "MEND heals without touching the pool")
+	Check.check(r.hp == 15 and r.max_hp == mh1, "MEND heals without touching the pool")
 
 	# Every card in the table is applied and recorded. A copy-paste slip that
 	# adds a description without an arm shows up here rather than as a dead pick.
 	for u in UPGRADES:
 		var probe := new()
 		probe.apply_upgrade(str(u["id"]), rng)
-		assert(probe.upgrades.has(str(u["id"])), "%s is applied and recorded" % u["id"])
+		Check.check(probe.upgrades.has(str(u["id"])), "%s is applied and recorded" % u["id"])
 
 	# Rewards are three distinct offers, and ADD_DIE drops out when the pool is full.
 	var full := new()
 	for _i in 5:
 		full.apply_upgrade("ADD_DIE", rng)
-	assert(full.dice.size() == MAX_DICE, "pool caps at MAX_DICE")
+	Check.check(full.dice.size() == MAX_DICE, "pool caps at MAX_DICE")
 	var offers := full.roll_rewards(rng)
-	assert(offers.size() == 3, "always three offers")
+	Check.check(offers.size() == 3, "always three offers")
 	var ids := {}
 	for o in offers:
 		ids[o["id"]] = true
-		assert(o["id"] != "ADD_DIE", "ADD_DIE not offered at a full pool")
-	assert(ids.size() == 3, "offers are distinct")
+		Check.check(o["id"] != "ADD_DIE", "ADD_DIE not offered at a full pool")
+	Check.check(ids.size() == 3, "offers are distinct")
 
 	# Persistence round-trips through user://run.json.
 	record_run(3, false)
 	record_run(5, true)
 	var stats := load_stats()
-	assert(int(stats["best_depth"]) == 5, "best depth is the max reached")
-	assert(int(stats["wins"]) >= 1, "victories are counted")
+	Check.check(int(stats["best_depth"]) == 5, "best depth is the max reached")
+	Check.check(int(stats["wins"]) >= 1, "victories are counted")
 
 	# A finished run unlocks the next bonus die, and the hand always fills.
 	record_run(2, false)
 	var owned := owned_dice().size()
-	assert(owned >= 5, "a bonus die is owned after a run")
-	assert(owned <= 7, "never more than the three bonus dice")
+	Check.check(owned >= 5, "a bonus die is owned after a run")
+	Check.check(owned <= 7, "never more than the three bonus dice")
 	var hand := new()
 	hand.set_loadout(["Blade", "NotADie", "AlsoFake"])
-	assert(hand.dice.size() == POOL_SIZE, "a bad loadout still fills the hand")
-	assert(hand.dice[0].title == "Blade", "and keeps the titles it could use")
+	Check.check(hand.dice.size() == POOL_SIZE, "a bad loadout still fills the hand")
+	Check.check(hand.dice[0].title == "Blade", "and keeps the titles it could use")
 	hand.set_loadout(owned_titles())  # everything owned, which is more than a hand
-	assert(hand.dice.size() == POOL_SIZE, "an oversized loadout is trimmed to a hand")
-	assert(hand.share_text(4, true).contains("Depth 4 of 9"), "a free run reports depth")
+	Check.check(hand.dice.size() == POOL_SIZE, "an oversized loadout is trimmed to a hand")
+	Check.check(hand.share_text(4, true).contains("Depth 4 of 9"), "a free run reports depth")
 
 	# Difficulty: a dumb bot clears the run sometimes and never trivially.
 	# The depth line is here because "0/40" on its own cannot tell a game that is
@@ -628,7 +629,9 @@ static func self_test() -> void:
 		depth_sum += bot.depth + 1
 	print("  autoplay cleared the boss %d/%d runs, avg depth %.1f of %d"
 		% [wins, TRIALS, float(depth_sum) / TRIALS, FINAL_DEPTH + 1])
-	assert(wins > 0, "the run is beatable by a simple bot")
-	assert(wins < TRIALS, "but not a given")
+	Check.check(wins > 0, "the run is beatable by a simple bot")
+	Check.check(wins < TRIALS, "but not a given")
 
-	print("run.self_test: OK")
+	# The pass/fail verdict is Check.report()'s exit code, not this line.
+	print("run.self_test: %d checks, %d failed"
+		% [Check.checks, Check.failures.size()])
