@@ -33,6 +33,43 @@ class Face:
 	##
 	## Compares raw `dmg`, so two paired faces cannot chain into each other.
 	var pairs: bool = false
+	## Armour this face ignores, per hit. Item 7, and the retry of item 5.
+	##
+	## Item 5 put 12 on Sunder's `cleave` and 12 is `Enemy.ARMOR_GROW_CAP`, so
+	## the face ignored every scrap of armour the game can produce -- and Sunder
+	## is a *starter*, so it was that in every fight of every run. This is a
+	## swap rather than a buff, and the cost is the point: Fang's `18` became a
+	## `15` that pierces 6, which moves what the face deals by
+	## `min(armour, 6) - 3` -- three less against an unarmoured enemy, two more
+	## against the armoured third of the roster, and better still as ARMOR_GROW
+	## carries a fight past 5. It is still not a flat power add: at the cap it
+	## lands 9, so the invariant two constants up ("the swingiest faces always
+	## still land something") survives.
+	##
+	## Deliberately not counted by `worth()` below. That ranking is used by
+	## REFORGE and CURSE, neither of which has an enemy in hand to score
+	## against, and armour is the only thing this field changes.
+	##
+	## Predicted before the bench ran, so the measurement can falsify it: a wash.
+	## The face is scoped to a player who spent a pick on ADD_DIE and then rolled
+	## this die, so it cannot be item 5's flat chip in every fight of every run,
+	## and it is a swap rather than a buff, so it loses on the unarmoured third of
+	## the roster. The `Enemy.pierce` note above is the prior running against it:
+	## armour bypass has been measured in this pool once and scored as the worst
+	## pick in it. Expect the band and the depth to hold and the wins not to move.
+	##
+	## Measured, and the prediction was right: `<random>` 16.5% -> 16.4%, depth
+	## 7.69 -> 7.69, every row within 0.5pp and the signs mixed. The reason is
+	## the rate, and it is the number to read before re-tuning the 6. Over 16,098
+	## resolves on the ADD_DIE arm: a Fang is in the pool for 19.1% of fights,
+	## this face comes up on **1.82% of all resolves**, and it beats the 18 it
+	## replaced on **53.9%** of those -- the `armour >= 4` crossover above,
+	## measured rather than assumed. It is live (item 8's pair pays on 0.49%,
+	## so this fires 3.7x more often) and it is still too rare to move a run:
+	## 0.63 damage per appearance times 1.82% is +0.011 damage per resolve. Keep
+	## this in mind before raising the 6 to make it matter -- a bigger pierce
+	## lands more often without arriving more often, and rate 1 is the ceiling.
+	var pierce: int = 0
 
 	func _init(l: String, d: int, b: int, r: int) -> void:
 		label = l
@@ -298,7 +335,7 @@ class Encounter:
 		]))
 		out.append(Die.new("Fang", [
 			Face.new("1", 1, 0, 0), Face.new("3", 3, 0, 0), Face.new("5", 5, 0, 0),
-			Face.new("8", 8, 0, 0), Face.new("11", 11, 0, 0), Face.new("18", 18, 0, 0),
+			Face.new("8", 8, 0, 0), Face.new("11", 11, 0, 0), Face.new("pierce 6", 15, 0, 0),
 		]))
 		# The `5` and only the `5`. It is the one face in the roster that lands
 		# exactly on `EXPOSE_AT` when doubled, so a pair is a second route into
@@ -307,6 +344,9 @@ class Encounter:
 		# which is a flat power add with extra steps: 22 is over every armour in the
 		# roster and over the boss.
 		out[2].faces[2].pairs = true
+		# And the `pierce 6`, the face item 7 re-sized. See `Face.pierce` for why
+		# it is 15 and not 18, and for the `min(armour, 6) - 3` that decides it.
+		out[2].faces[5].pierce = 6
 		return out
 
 	func _picked() -> int:
@@ -502,7 +542,11 @@ class Encounter:
 			# Armour applies per die, so one big hit beats two small ones.
 			# `face_hit`, not `f.dmg`: a paired face reads its doubled number on
 			# the card, and the resolve has to be the card's arithmetic.
-			var through := enemy.pierce(face_hit(i), pierce)
+			# `f.pierce` is the face's own, added to the run's PIERCE upgrade, so the
+			# two stack without either of them being able to see the other. Reading
+			# `pierce` alone would have made the face's field dead code on both
+			# resolve paths while every test still passed on unarmoured enemies.
+			var through := enemy.pierce(face_hit(i), pierce + f.pierce)
 			dealt += through
 			last_deflected += maxi(0, face_hit(i) - through)
 			if dice[i].rushed > 0 and rush:
@@ -519,7 +563,7 @@ class Encounter:
 			var hf := dice[banked].face()
 			blk += hf.block
 			gained += hf.rerolls
-			var cashed_through := enemy.pierce(face_hit(banked), pierce)
+			var cashed_through := enemy.pierce(face_hit(banked), pierce + hf.pierce)
 			dealt += cashed_through
 			last_deflected += maxi(0, face_hit(banked) - cashed_through)
 			hardest = maxi(hardest, face_hit(banked))
@@ -893,6 +937,7 @@ static func _focus_tests() -> void:
 	_deflect_tests()
 	_bastion_tests()
 	_pair_tests()
+	_pierce_tests()
 
 
 ## GAMBLERS_RUSH: a re-roll that lands on a strictly better face adds half of
@@ -1191,6 +1236,91 @@ static func _pair_tests() -> void:
 	Check.check(breakable.pair_bonus(0) > 0, "paired to start")
 	breakable.dice[1].up = 4  ## Blade 7
 	Check.check(breakable.pair_bonus(0) == 0, "and unpaired the moment the partner moves")
+
+
+## A face that ignores armour. Item 7, the retry of item 5.
+##
+## Every check below runs the *resolve*, not `Enemy.pierce` alone, because the
+## whole of item 5's failure is that the number it produced was correct and the
+## place it was produced was wrong: a per-face field threaded nowhere reads as a
+## flag that is set, and a test on the field alone would pass on a build where
+## the resolve never consulted it. So each case pins a die and reads enemy hp.
+static func _pierce_tests() -> void:
+	var fang: Die = Encounter.bonus_dice()[2]
+	var face: Face = fang.faces[5]
+	Check.check(face.pierce == 6, "Fang's top face pierces 6")
+	Check.check(face.dmg == 15, "and it is the 15, not the 18 it replaced")
+
+	# The invariant `Face.pierce`'s comment claims. At the armour cap the pierced
+	# face must still land something, or the game grows an unkillable fight that
+	# only ends when the player dies -- which is what `ARMOR_GROW_CAP` exists to
+	# prevent, and a piercing face is the most likely way to break it.
+	var cap := Enemy.new("Cap", 40, Enemy.ARMOR_GROW_CAP, 0)
+	Check.check(cap.pierce(15, 6) == 9, "it still lands 9 at the armour cap")
+	Check.check(cap.pierce(15, 6) > 0, "so ARMOR_GROW cannot make the face inert")
+	Check.check(face.pierce < Enemy.ARMOR_GROW_CAP,
+		"and the pierce is under the cap, so it never fully bypasses (item 5's bug)")
+
+	# The trade itself, which is the argument for the whole item: worse where
+	# there is no armour, better where there is. Asserted as the resolve's own
+	# arithmetic so a change to either number has to move one of these.
+	var dealt := func(armour: int) -> int:
+		var e := Encounter.new(Enemy.new("T", 40, armour, 0), [fang.copy()])
+		e.dice[0].up = 5
+		e.enemy.hp = 40
+		e.resolve_faces()
+		return 40 - e.enemy.hp
+	Check.check(dealt.call(0) == 15, "unarmoured: 15, so three less than the 18 it replaced")
+	Check.check(dealt.call(3) == 15, "armour 3 is the crossover, where the swap is exactly neutral")
+	Check.check(dealt.call(5) == 15, "armour 5: still 15, two more than the old face landed")
+	Check.check(dealt.call(5) == 18 - 5 + 2, "which is the +2 the min(armour, 6) - 3 predicts")
+
+	# Stackable with the run's PIERCE and not shadowed by it. A run holding both
+	# must not see one of them, and the two live on different objects on purpose.
+	var stacked := Encounter.new(Enemy.new("T", 40, 8, 0), [fang.copy()])
+	stacked.pierce = 3
+	stacked.dice[0].up = 5
+	stacked.enemy.hp = 40
+	stacked.resolve_faces()
+	Check.check(40 - stacked.enemy.hp == 15, "PIERCE 3 and the face's 6 stack: 8 - 9 clamps to none")
+	var face_only := Encounter.new(Enemy.new("T", 40, 8, 0), [fang.copy()])
+	face_only.dice[0].up = 5
+	face_only.enemy.hp = 40
+	face_only.resolve_faces()
+	Check.check(40 - face_only.enemy.hp == 15 - (8 - 6),
+		"without the run card the same face lands 13, so the stack is not a no-op")
+
+	# The held-die path. Banking cashes through a second `enemy.pierce` call, and
+	# a rule threaded onto the first site only is the exact half-implementation
+	# this suite exists to catch.
+	var banked := Encounter.new(Enemy.new("T", 40, 8, 0), [fang.copy()])
+	banked.dice[0].up = 5
+	Check.check(banked.toggle_bank(0), "the pierced die can be held")
+	# `toggle_bank` leaves `bank_carried` false: the cash is owed to the *next*
+	# roll, not this one. Set it so the resolve takes the cashing branch.
+	banked.bank_carried = true
+	banked.enemy.hp = 40
+	banked.resolve_faces()
+	Check.check(banked.banked == -1, "the hold was cashed")
+	Check.check(40 - banked.enemy.hp == 13, "and the pierced face paid through the hold, not full 15")
+
+	# Nothing else in the roster may carry the flag, for the reason item 6 died of.
+	var tagged := 0
+	for d in Encounter.library():
+		for f in d.faces:
+			tagged += 1 if f.pierce > 0 else 0
+	for d in Encounter.bonus_dice():
+		for f in d.faces:
+			tagged += 1 if f.pierce > 0 else 0
+	Check.check(tagged == 1, "exactly one face in the whole roster pierces")
+
+	# A starter must not be able to reach it. Item 5's regression was precisely
+	# that a starter carried the face, so it applied in every fight of every run.
+	var starters := 0
+	for d in Encounter.library():
+		for f in d.faces:
+			starters += 1 if f.pierce > 0 else 0
+	Check.check(starters == 0, "and no starter die carries a piercing face")
 
 
 ## Banking: hold one die a turn. The property that makes it a hold rather than a

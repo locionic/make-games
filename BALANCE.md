@@ -244,6 +244,17 @@ while random sits at 8% is a *harder* game with sharper decisions, which is the
 goal; widening it while random sits at 30% is a worse game with sharper
 decisions.
 
+**The band is lopsided, and the lopsidedness is invisible until you subtract.**
+Random currently measures 16.5% at N=1000 and 15.6% at N=4000 — so somewhere
+around **16%**, against a band of 8–18%. That is 1.5–2.4 points of room *up* and
+roughly 8 points of room *down*. The band reads as symmetric and is not, and the
+asymmetry decides what a change can be for: almost any rebalance that makes the
+game easier is one or two cards from failing a hard criterion, while making it
+harder has room for several runs' worth of work. Worth knowing before reading a
+failed criterion 2 as "this card is too strong" — the failure may be the band
+closing, not the card. Criterion 3 has the same shape from below: 7.69 against a
+7.6 floor is 0.09 of headroom on a 0.09 scale.
+
 **Criterion 1 does not apply to `dice.gd`.** See "The ratio cannot be widened by
 a `dice.gd` change" above — a rules change is uniform, so it cannot move a
 relative metric. For rules changes, replace criterion 1 with: random win% stays
@@ -294,9 +305,27 @@ Strike through and note the verdict when tried.
    loosening it the moment a result fails is how a gate stops meaning anything.
    The idea is not lost — it is here, with its numbers, if anyone wants to argue
    it with a bigger run count.
-3. **[ ] BLESS is below random (7.3%).** Raise its numbers rather than retire
-   it — a card that is merely mis-sized is a different problem from a bad card,
-   and "bad" is not currently distinguishable from "load-bearing difficulty".
+3. **~~[x] BLESS is below random (7.3%). Raise its numbers.~~ DROP 2026-09-30,
+   on the premise, before any code.** The instruction and the measurement point
+   opposite ways, and it is the measurement that is current. That `7.3%` is a
+   **nine-card-pool** number; the pool is twelve cards, where BLESS measures
+   17.6% against a random at 16.5% — i.e. above random, not below it. Raising
+   its numbers would have made the game *easier*, which is the opposite of what
+   the item asked for.
+   1.1pp at N=1000 is 0.94 standard errors, so the aggregate cannot settle the
+   sign, and "not significantly different" is not the same as "still below".
+   Both arms re-run on 4000 **paired** seeds and scored on the discordant pairs,
+   which is what the unpaired standard error throws away: **only-BLESS-won 308,
+   only-random-won 237, net +71 of 545, exact two-sided p = 0.0027**. BLESS is
+   above random. Not a near-miss, and not noise.
+   So the card is not mis-sized, and there is nothing to raise. What it is
+   instead is a **difficulty load-bearer** — 17.4% against a 15.6% random, near
+   the top of the 8–18% band — which is the role this document has spent four
+   items calling a bad card, and the one thing `7.3%` had concealed.
+   The generalisable part: **every open item in this file was written against
+   the 9-card pool, and this is the second one in two days whose premise had to
+   be re-measured before it could be worked at all.** Re-measure an item's
+   premise against the current pool before building it.
 
 ### Rules (`dice.gd`) — band-and-delta applies, ratio does not
 
@@ -321,16 +350,40 @@ Strike through and note the verdict when tried.
    held), and the ratio narrowed anyway, for the structural reason above. Under
    the amended criterion this would have been a marginal pass on delta. It is
    the mechanic most likely to survive contact with players.
-7. **[ ] Per-face armour pierce, on an *acquired* die.** The retry of item 5,
-   with the failure mode designed out. Put the piercing face on a `bonus_dice`
-   entry (Fang or Spark) rather than a starter, and size it so the die has a
-   real cost — a face that deals 12 and ignores armour is only a decision if
-   something was given up for it. Touches `dice.gd` only. **Do not** re-run
-   item 5's version: it is measured, and the numbers are in the log.
-8. **[ ] Re-take item 6 (the paired face) on an acquired die.** Same reasoning,
-   same reason. On a starter it is live in every run from turn one, which is
-   why it moved difficulty at all; on a die the player had to choose, it would
-   sharpen that choice. **Do not** re-run item 6's exact version.
+7. **~~[x] Per-face armour pierce, on an *acquired* die.~~ KEEP 2026-09-30.**
+   `Face.pierce: int`, threaded into both `enemy.pierce()` call sites in
+   `resolve_faces` — the main loop *and* the held-die cash. On Fang, the `18`
+   became a `15` that pierces 6. That swap is the whole of item 5's designed-out
+   failure mode: the item said a piercing face is only a decision if something
+   was given up for it, so the raw number comes down by 3 and the face moves by
+   `min(armour, 6) - 3` — three less unarmoured, two more once armour is 4, and
+   still 9 at `ARMOR_GROW_CAP`, so the "swingiest faces always land something"
+   invariant survives. The pierce is 6, not 12, which is what item 5 got wrong.
+   Measured against the Baseline above on the same seeds: **random 16.5% →
+   16.4%, depth 7.69 → 7.69**, every row within 0.5pp with mixed signs, suite
+   8490/0. Band holds, floor holds, ratio unchanged — the same verdict item 8
+   got, for the same reason.
+   The number that matters more is the trigger rate, because "neutral" and
+   "never fires" look identical in a win% table — which is exactly how PLAN
+   0.3's big-hit enemy got built. Over 16,098 resolves on the ADD_DIE arm: a
+   Fang is in the pool for 19.1% of fights, **this face comes up on 1.82% of
+   all resolves**, and it beats the `18` it replaced on **53.9%** of those —
+   the `armour >= 4` crossover, measured rather than assumed. It is live: item
+   8's pair pays on 0.49%, so this fires 3.7x more often. It is also too rare
+   to matter: 0.63 damage per appearance times 1.82% is +0.011 damage per
+   resolve, which is the whole explanation for a 0.1pp move.
+   **Kept because it is a decision the player can read off the board, not
+   because it makes the game better** — it does not, and the honest reason it
+   survives is that half the time it is worse and you chose it anyway. Before
+   anyone raises the 6 to make it count: a bigger pierce lands more often
+   without arriving more often, and 19.1% of fights is the ceiling.
+   **Do not** re-run item 5's version: it is measured, and the numbers are in
+   the log.
+8. **~~[x] Re-take item 6 (the paired face) on an acquired die.~~ KEEP
+   2026-09-30.** `Face.pairs`; Fang's `5` pairs, so it doubles to 10 next to a
+   matching die. random `15.9% -> 16.5%` (+0.6, allowance 3), depth `7.68 ->
+   7.69` (floor 7.6), suite green. Neutral on difficulty, which is the result:
+   the same face on a starter cost 3.3 points. Numbers in the Log.
 
 ## Log
 

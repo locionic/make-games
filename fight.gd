@@ -903,7 +903,11 @@ func _refresh() -> void:
 	# here, and re-rolling one of them into a 9 is the fight.
 	var best := 0
 	for d in enc.dice:
-		best = maxi(best, enc.enemy.pierce(d.face().dmg, enc.pierce))
+		var df: Rules.Face = d.face()
+		# The face's own pierce rides here too, or BEST HIT would under-report a
+		# pierced Fang by up to 6 while the resolve deals it -- the preview and the
+		# number that actually lands are not allowed to disagree.
+		best = maxi(best, enc.enemy.pierce(df.dmg, enc.pierce + df.pierce))
 	best_num.text = str(best)
 	best_num.add_theme_color_override("font_color", T.DMG if best > 0 else T.FAINT)
 	# At zero the number alone is ambiguous -- it reads as "you did nothing this
