@@ -29,7 +29,38 @@ const SFX := {
 	"win": preload("res://audio/win.ogg"),
 	"lose": preload("res://audio/lose.ogg"),
 }
-const SFX_VOL := -7.0  ## dB. Under the bed, not on top of it.
+## dB. Over the bed, not under it -- and the old comment here said the
+## opposite of the code, which is how the mix went unexamined. -7 is 2dB above
+## MUSIC_VOL's -9, and the files are not level with each other either, so the
+## effective level of a sound is its own loudness plus this. Measured, RMS in
+## dBFS, the column that decides the mix is the last one:
+##
+##   ffmpeg -i audio/roll.ogg -af volumedetect -f null -
+##   ffmpeg -i audio/roll.ogg -af lowpass=f=1000,volumedetect -f null -
+##
+##   file     peak    rms   <1kHz   effective vs the combat bed
+##   roll     -2.0   -22.1   -31.5   -29.1 open / -35.1 re-rolled  1.6 under
+##   tap      -1.8   -19.8   -28.6   -26.8 plain, -23.8 at +3       0.7 over
+##   strike   -1.0   -19.9   -25.7   -26.9                         0.6 over
+##   block    -1.8   -17.8   -18.4   -24.8 plain, -22.8 at +2       2.7 over
+##   hurt     -1.3   -18.6     --    -25.6                         1.9 over
+##   win      -1.5   -15.3   -16.9   -22.3                         5.2 over
+##   lose     -1.5   -15.7     --    -22.7                         4.8 over
+##   combat   -1.6   -18.5   -18.7   -27.5   the bed itself
+##
+## Eight of the ten call sites land over the bed; only the two rolls land under
+## it, and the re-rolled one is 7.6dB under, because fight.gd passes vol:-6 to
+## keep it tellable from the opening clatter. That was chosen relative to the
+## other roll and never against the bed, so the two margins multiplied.
+##
+## None of it is tuned blind. The last column is desktop RMS and does not
+## predict a phone: the bed is almost entirely below 1kHz and the clatters are
+## 6-9dB above it, and a phone speaker reproduces those two bands very
+## differently -- it loses most of the music and keeps the clatter. So the
+## desktop ranking can invert on a handset, which is the whole reason 4.1 asks
+## for a device pass, and why these numbers are written down rather than acted
+## on here. Re-measure if a file is replaced.
+const SFX_VOL := -7.0
 const SFX_POOL := 6  ## a clatter and a hit can overlap; one player would eat the other
 
 var run: RunState
