@@ -214,8 +214,15 @@ you are already playing.
       neither does. An earlier version of this checklist said
       `dicefate.aab` was debug-signed and Play would reject it; that was
       wrong, and it was acted on — so do not skip the upload on that basis.
-      The two files are the same build under two names, kept by hand, which is
-      how they drifted apart in the first place. Upload whichever is newer.
+      **They are not the same build**, which this note previously said they
+      were — that is how they drifted apart in the first place. Checked by
+      unzipping each: `dicefate.aab` (2026-09-30) ships 6 compiled scripts,
+      `dicefate-release.aab` (2026-09-29) ships 5 and has no `_check.*`. Not a
+      packaging fault: `_check.gd` was written 2026-09-30 04:53, a day *after*
+      the older AAB was built, so nothing in it refers to the file and it is
+      internally consistent. It is simply the pre-Phase-3 build. **Upload
+      `dicefate.aab`.** Re-run `godot --headless --path . -s _pack.gd --
+      Android` after any rebuild; it checks the export and boots the pack.
 - [ ] `versionCode` must be strictly higher than any version ever uploaded for
       `com.dicespike.game`, including drafts and rejected uploads. It lives in
       `export_presets.cfg` as `version/code` under the Android preset — **not**
