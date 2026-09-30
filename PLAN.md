@@ -104,6 +104,36 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
 - Test touch ergonomics for the new buttons (Focus, Bank, Re-roll) on small screens (540x960 baseline).
 - Verify audio mix through device speakers and headphone jack.
 
+> **`dicefate-release.aab` is not the artifact to deploy (measured 2026-09-30),
+> and this bullet is why it matters.** It was built **2026-09-29 15:45:25**.
+> Phase 3 landed at **09-30 06:38:06** (`368de82`, "PLAN.md 3.1 tactile dice, 3.2
+> floating combat numbers") and `fight.gd` took four more commits after it
+> (`79de3f5`, `73238fe`, `d035c37`, `599baac`). The release bundle predates all
+> five by **14.9 hours**, so deploying it tests the pre-juice game: no floating
+> numbers, no gold-focus tick, no screen shake, no boss haptic, and the old
+> touch targets that `79de3f5` and `73238fe` exist to fix.
+>
+> Measured, not inferred. `fight.gdc` is **15,007 bytes** in
+> `dicefate-release.aab` and **20,178** in `dicefate.aab` — the 5,171-byte gap is
+> the Phase 3 work. It is the largest *shipped-logic* delta of the five
+> scripts, and the qualification matters: `dice.gdc` differs by more, 17,947
+> bytes, but that gap is the headless test suite (`2b07efd` alone accounts for
+> 248 lines of it) and the release bundle ships no `_check.gdc` at all. Reading
+> the biggest delta as the biggest gameplay delta would overstate the case, so
+> the claim is scoped to what a player loads.
+>
+> Audio is *not* a differentiator and is worth saying so explicitly: both
+> bundles carry all 9 files and are byte-identical at **1,188,787** bytes of
+> imported `.oggvorbisstr`, so the "verify the audio mix" bullet above is
+> equally satisfiable by either build. A file-size differential is how this was
+> established; see the warning in `play/LISTING.md` about grepping the compiled
+> `.gdc`, which returns "absent" for everything including a control string.
+>
+> **Use `dicefate.aab`.** It is the one built after Phase 3. The naming is
+> actively backwards — the file called "release" is the older build — so the
+> artifact name is not evidence of anything; the mtime and the `fight.gdc`
+> delta are.
+
 ### 4.2 Web Demo & Community Feedback
 - Export to `build/web/` and publish an itch.io private playtest.
 - Gather qualitative feedback on whether the Focus and Bank mechanics feel intuitive and rewarding.
