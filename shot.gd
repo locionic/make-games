@@ -606,6 +606,23 @@ var screen_dp := 540.0
 ## 540-wide run, which is the gate being blind, not the layout being fine.
 ## PLAN.md 4.1 asks about "small screens (540x960 baseline)" and the baseline
 ## was the only screen the gate ever looked at.
+##
+## Now measured, and recorded here because 4.1's hardware pass is the half of it
+## that cannot be run from this machine and it is arguing with exactly this
+## number. The smallest target in the layout is 74x74 canvas units, and it has
+## no floor of its own -- the effective size is linear in screen width, so the
+## whole safety margin lives in the width of the phone:
+##
+##     360dp -> 49.3dp   (+1.3 over the 48 minimum, 2.7% headroom)
+##     375dp -> 51.4dp   (+3.4)      411dp -> 56.3dp   (+8.3)
+##     540dp -> 74.0dp   (+26.0)     the authored baseline
+##
+## Crossover is 350dp: below that the smallest target drops under 48dp and the
+## gate turns red on its own. 360dp is the narrowest Android ships in practice,
+## so the floor holds everywhere real, but 2.7% is the entire margin at that
+## width -- a single row of padding, or a card font step, decides it. If a
+## layout change ever shows up in the hardware pass as "hard to hit", this is
+## the number to read first.
 func _dp(canvas_px: float) -> float:
 	return canvas_px * screen_dp / 540.0
 
