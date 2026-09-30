@@ -112,6 +112,22 @@ The eight are checked against these specs by re-running `shot.gd`; the generator
 flattens the alpha channel, because the viewport read-back is RGBA and Play
 rejects that. Upload order is `01`…`08` as numbered.
 
+That was the whole of the guarantee until `6539bb2`: it described the
+*generator*, and said nothing about the files already in the folder. The table's
+three rows were correct by hand and unchecked, so a re-shoot at the wrong size,
+a screenshot with an alpha channel, or a ninth file dropped in would have
+survived every gate and been rejected at upload. `shot.gd --check` now reads
+them and asserts the count, each shot's size and lack of alpha, and both rows
+below the screenshots — including that the icon keeps the alpha channel the
+Play spec wants, which is the one asset where the answer is yes. It writes
+nothing, so it runs in the gate loop above like the rest.
+
+The alpha test is `Image.get_format()`, not `Image.detect_alpha()`. The second
+inspects pixel values rather than the channel, so it calls `icon.png` opaque --
+all 512×512 of it -- and would equally have passed a screenshot carrying a fully
+opaque alpha channel, which is exactly what Play rejects. `FORMAT_RGB8` is no
+alpha, `FORMAT_RGBA8` is alpha, and the two assets differ by precisely that.
+
 Play caps screenshots at 8, and there were 9 until 2026-09-29: `01-title-first-
 launch` was moved to `screenshots-spare/` and the rest renumbered, on the grounds
 that it and `02-title-pick-your-hand` are both title screens at near-identical
