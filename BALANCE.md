@@ -633,6 +633,15 @@ Strike through and note the verdict when tried.
 > row is what says the mechanic itself is fine, so this is a statement about the
 > card, not about Focus.
 >
+> **The `dice:nudge` half of that does not carry its weight uncaveated, and I left
+> it that way.** `nudge` is one of the policies I wrote (1116, 1201), and it always
+> spends — see the correction under **CUT** below, which carries the measured
+> reason. The conclusion here survives anyway, because it rests on the controlled
+> comparison rather than on the policy's score: the card lost to its own control
+> by 7.7 standard errors on depth, under a hand that was the same on both sides.
+> **Drop the second half of the sentence and the argument still says what it
+> needs to.**
+>
 > **What I should have done before building anything** was `git log -S
 > "DISCIPLINED_MIND"`, which answers "has this been tried" in one command. The
 > card's name is in this file, its epitaph is in this file, and the epitaph is
@@ -1016,6 +1025,45 @@ the price was wrong, and repricing to +2 Focus for −0.5 rerolls moved it 9.0%
 fixes it: re-rolls are per-turn and effectively unbounded, Focus is per-fight
 and bounded, so the card taxes the plentiful currency to buy the scarce one.
 **CUT.** `dice:nudge` above says the mechanic itself is fine; the card was not.
+
+> **The second half of that sentence is the better-evidenced one, and the two are
+> not the same claim (corrected 2026-09-30).** "The card was not" is a *controlled*
+> result and does not depend on the policy: `dice:nudge` at 24.8% is the row the
+> card was measured against, so the card and its control were played by the same
+> hand. Whatever that hand is worth, it was worth the same to both arms.
+>
+> And the noise claim is narrower than I first wrote it, so it belongs to the
+> *other* number. The `7.8 points` in the table is the first attempt's **win-rate**
+> gap and BALANCE.md records no standard error against it; the re-measurement's
+> backed figure is **7.7 standard errors on average depth** (7.69 → 7.21, line
+> 586). That is the one to lean on. The two gaps point the same way, but only one
+> of them has a distribution behind it, and the sentence should not pretend
+> otherwise.
+>
+> "The mechanic itself is fine" *is* that policy, restated — and it is weaker than
+> it reads, because the policy cannot express the mechanic's best use.
+> `_spend_all_focus` spends every charge on the biggest immediate gain, and
+> `focus_left` **carries across turns**: `roll_all` refills `rerolls_left` and
+> leaves focus alone (`dice.gd`, and the test at line 1048 asserts it — "a roll
+> does not refill the focus charges"). A run grants it once at `run.gd:146`, so
+> with `base_focus = 1` a player may hold the single charge for the turn the hit
+> is worth saving it for. The Devourer is the clean case: `run.gd:136` gives it
+> `atk 9` and `BEH_ENRAGE`, which is `+1` a turn (`dice.gd:154`), so its fourth
+> enemy turn telegraphs 12 — and the bot has no way to represent the choice.
+> `dice:nudge` is therefore a **lower** bound on what Focus is worth, and using it
+> as an upper bound is the same move `read` and `reach` get a caveat for at lines
+> 891 and 960. The generic version is already stated at 1116; this is the
+> point-of-use one that was missing.
+>
+> The asymmetry above is also sharper than "effectively unbounded" states, and
+> the sharper form needs no turn count to make: **re-rolls refill every turn and
+> Focus never refills.** The exchange rate moves against the card the longer any
+> single fight runs, which is the direction the measurement went. "Effectively
+> unbounded" is not wrong so much as unmeasured — no fight length is recorded
+> anywhere in this file, and the baseline's `7.69` cannot stand in for one:
+> depth is fights cleared, not turns taken (`_balance.gd:11`). An unmeasured
+> word in a diagnosis is how the first attempt got repriced around instead of
+> cut.
 
 ### The paired rows, and why the fix to the controls mattered
 
