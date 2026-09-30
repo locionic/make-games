@@ -240,7 +240,7 @@ That kills every version a DoT could have taken:
   Fights last a mean of 5.20 resolves and only 18.9% are still running after
   five, so the delivery window is narrow as well as the surplus being unusable.
 - **Add damage.** Then it is a plain damage increase. Random measures ~16%
-  against a band topping out at 18, so there is about 1.5–2.4 points of room
+  against a band topping out at 18, so there is about 1.6–2.4 points of room
   upward before criterion 2 fails outright — a DoT sized to be worth having
   does not fit in it.
 
@@ -288,7 +288,7 @@ of 3,894 last turns are free or negative). So the third corner closes as well:
 - **Harvest the excess.** No post-zero window exists (§ above).
 - **Re-time the same damage.** No upside; a strictly dominated card.
 - **Gate it on durability.** The gate does not discriminate — 93% pass.
-- **Add damage.** A universal buff, and the band tops out 1.5–2.4 points above
+- **Add damage.** A universal buff, and the band tops out 1.6–2.4 points above
   random.
 
 **Do not add this as a card either.** A 13th card is *predicted* to fail
@@ -378,8 +378,35 @@ then moved it a further 0.01x on its own, with no card added — so the ratio
 tracks the rules, not only the pool, and the stamp is load-bearing.
 
 Depth is the quieter half of the same story: 7.97 -> 7.69 against a 7.6 floor.
-A blind run finishes 0.09 into 0.09 of headroom, and that is the number to
-watch before the ratio, because the floor is a hard fail and the ratio is not.
+That is the number to watch before the ratio, because the floor is a hard fail
+and the ratio is not.
+
+> **How much room the floor actually has, measured (2026-09-30).** This block
+> used to say *"a blind run finishes 0.09 into 0.09 of headroom"* — the margin
+> restated as if it were the noise, which is a different quantity and the
+> reason the floor looked like a hard, deterministic edge. Tallying depth
+> per run over the same 1,000 seeds (mean reproduces at **7.6910**, so the
+> tally is the bench's own convention, not a new one):
+>
+> | | |
+> |---|---|
+> | sd of a run's depth | 1.9711 |
+> | **SE at N=1000** | **0.0623** |
+> | margin over the 7.6 floor | 0.0910 — **1.5 standard errors** |
+> | 95% CI on mean depth | [7.5688, 7.8132] |
+>
+> Two corrections. The scale is **0.0623**, not 0.09, so the floor has 1.5
+> runs of headroom rather than exactly one. And the 95% interval **straddles
+> 7.6**, which means a change that alters the rules by *nothing measurable*
+> still fails criterion 3 about **7% of the time** (z = -1.46). Criterion 3 is
+> a real constraint and it is the tight one — but it is a *statistical* floor
+> wearing a hard one, and a lone failed criterion 3 should be re-run before
+> it is read as "this change costs depth".
+>
+> The caveat that keeps this honest: the seeds are fixed, so re-running the
+> same build gives bit-identical depth and the SE only bites when the rules or
+> the seed set change. It is the right figure for "how far can this move and
+> still mean something", not for "will this number wobble on re-run".
 
 ## The gate
 
@@ -422,14 +449,16 @@ decisions.
 
 **The band is lopsided, and the lopsidedness is invisible until you subtract.**
 Random currently measures 16.4% at N=1000 and 15.6% at N=4000 — so somewhere
-around **16%**, against a band of 8–18%. That is 1.5–2.4 points of room *up* and
+around **16%**, against a band of 8–18%. That is 1.6–2.4 points of room *up* and
 roughly 8 points of room *down*. The band reads as symmetric and is not, and the
 asymmetry decides what a change can be for: almost any rebalance that makes the
 game easier is one or two cards from failing a hard criterion, while making it
 harder has room for several runs' worth of work. Worth knowing before reading a
 failed criterion 2 as "this card is too strong" — the failure may be the band
-closing, not the card. Criterion 3 has the same shape from below: 7.69 against a
-7.6 floor is 0.09 of headroom on a 0.09 scale.
+closing, not the card. Criterion 3 has the same shape from below, and it is
+tighter: 7.691 against a 7.6 floor is a margin of 0.091 against a standard
+error of 0.062, so the floor sits inside the 95% interval. See the measurement
+under the Baseline block above.
 
 **Criterion 1 does not apply to `dice.gd`.** See "The ratio cannot be widened by
 a `dice.gd` change" above — a rules change is uniform, so it cannot move a
