@@ -13,6 +13,7 @@ const UI := [
 	"res://theme.gd", "res://game.gd", "res://fight.gd",
 	"res://main.tscn", "res://shot.gd", "res://icon.gd",
 	"res://_rects.gd", "res://_probe.gd", "res://_balance.gd",
+	"res://_pack.gd", "res://_stats.gd",
 ]
 
 func _init() -> void:
