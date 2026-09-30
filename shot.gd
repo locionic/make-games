@@ -331,6 +331,12 @@ func _run() -> void:
 	_check(share_btn != null, "the end screen has a share button to press")
 	share_btn.pressed.emit()
 	await _settle()
+	# Same node and the same buttons as "run over" above, so the target sizes
+	# cannot have moved -- but the *label* has, to "COPIED", and the
+	# label-fits-its-button assertion in _ergonomics has never been run against
+	# that string. It is shorter than "Copy result", so this passes, which is
+	# the point: it passes for a reason instead of by never having been asked.
+	_ergonomics(game, "share result")
 	_grab(7, "share-result")
 
 	# An armoured enemy. The plating ring only draws when armour > 0, and every
