@@ -15,17 +15,36 @@ extends SceneTree
 ## and a stale list passes while the real dependency went missing -- which is
 ## the whole failure this file exists to catch.
 ##
-## Why not load the pack instead: `--main-pack` looks like it works, and exits
-## 0 on a healthy pack -- but it also exits 0 on a pack with the entire rules
-## layer deleted, because it never loads the game's scripts. And
-## `load_resource_pack(.., true)` does not help either: with a project running
+## The file list alone is a statement about names, so the pack is also
+## *executed* below, which reads the shipped bytes. That second probe needed two
+## things worked out, and both were found the hard way.
+##
+## `--main-pack` does load the main scene and the game's scripts -- it is not
+## blind. It exits 0 either way, so the exit code says nothing and the
+## `SCRIPT ERROR` lines in its output are the only evidence. A pack missing
+## `_check.gd` really does print `Parse Error: Preload file "res://_check.gd"
+## does not exist` at dice.gd:3 and run.gd:12, then `Compile Error: Failed to
+## compile depended scripts` at game.gd:0 -- a shipped build whose main scene
+## cannot load, which on a phone is a blank screen and nothing else.
+##
+## It also answers from the source tree when the process happens to be standing
+## in the project directory: the missing preload resolves off disk and the probe
+## reports a clean run on a build that cannot compile. Measured, not assumed --
+## the same broken pack printed two `Parse Error` lines once the child was moved
+## to /tmp and nothing at all before it, which is how a control experiment very
+## nearly recorded the opposite conclusion. So the child runs from RUN_FROM,
+## and that is load-bearing rather than tidiness.
+##
+## `load_resource_pack(.., true)` is no use here at all: with a project running
 ## from a directory, res:// lookups still resolve to that directory, so a
-## project-only file loads even when the mounted pack does not contain it. Both
-## are green on a broken build. The exporter's own file list is the only
-## statement about the pack here that is not a guess.
+## project-only file loads even when the mounted pack does not contain it.
 
 const Check = preload("res://_check.gd")
 const PROBE := "/tmp/_pack_probe.pck"
+## Where the child below is made to stand. Must not be a directory the source
+## tree is reachable from, or the probe grades the source tree instead of the
+## pack -- see the header.
+const RUN_FROM := "/tmp"
 ## The exporter prints `  93% savepack | Storing File: res://x` with SGR
 ## colour around every field, so the line has to be cleaned before it can be
 ## read or every path comes out wrapped in escape codes.
@@ -79,7 +98,36 @@ func _init() -> void:
 	Check.check(shipped.has("res://_check.gd"),
 		"res://_check.gd ships -- dice.gd and run.gd preload it, and a filter "
 		+ "matching `_*.gd` takes the whole rules layer with it")
+	_runs(PROBE, preset)
 	quit(Check.report("_pack.gd"))
+
+
+## Boot the pack and read what the engine says. The file list above can only see
+## that a name was shipped; this sees whether the shipped bytes still compile,
+## which is the question that actually reaches a player.
+func _runs(pack: String, preset: String) -> void:
+	var out: Array = []
+	# Through a shell purely to set the child's directory -- `OS.execute` has no
+	# cwd argument, and the cwd is what makes this probe meaningful (header).
+	var cmd := "cd %s && exec %s --headless --main-pack %s --quit-after 120" % [
+		RUN_FROM, OS.get_executable_path(), pack]
+	var code: int = OS.execute("/bin/sh", ["-c", cmd], out, true)
+	Check.check(code == 0, "%s pack boots (exit %d)" % [preset, code])
+	var trace := "".join(out)
+	# Exactly `SCRIPT ERROR`, not "ERROR": a `--quit-after` teardown always
+	# complains about leaked ObjectDB instances and resources still in use, and
+	# matching those would make this check permanently red and therefore useless.
+	# A GDScript line is the one thing that means a shipped script did not parse.
+	var bad: Array = []
+	for line in trace.split("\n"):
+		if line.begins_with("SCRIPT ERROR"):
+			bad.append(line.strip_edges())
+	bad.sort()
+	for b in bad:
+		Check.check(false, "%s pack does not run: %s" % [preset, b])
+	if bad.is_empty():
+		print("_pack.gd: %s pack boots -- main scene and every script it loads compile"
+			% preset)
 
 
 ## Every file the exporter put in the pack, keyed by the *source* path. It
