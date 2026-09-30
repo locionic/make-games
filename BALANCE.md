@@ -219,13 +219,64 @@ That kills both versions a DoT could have taken:
 
 **Do not retry** without first changing `dice.gd:602` so the fight does not end
 at zero — let the enemy carry a wound that takes a turn to close, or let bleed
-apply before the death check. That is a real design and it is a bigger change
-than a status effect, because it moves where the game's difficulty is set: as
-measured here, difficulty is set almost entirely by **turn count**, not by damage
-totals, which is why the two `ARMOR_GROW` enemies are the grind of the roster
-(Rust Golem 13.2 resolves, Stone Sentinel 10.5) and the other seven die in about
-three. A mechanic that lengthens fights is a much bigger lever on this game than
-one that adds damage.
+apply before the death check.
+
+### …and the escape hatch does not work either (measured 2026-09-30)
+
+That last paragraph used to end *"that is a real design"*. **It is not, and the
+reason is worth more than the design would have been.** Moving the death check
+was supposed to open the post-zero window, and the cost it would have charged is
+tempo: the player takes K more enemy turns instead of the fight ending. Pricing
+that cost is one arithmetic question —
+
+```
+affordable(K) = hp_at_kill - K * (atk - block_re_earned_each_turn)
+```
+
+Block is spent rather than banked (`block = 0` at the end of every enemy turn),
+so an extra turn costs the player `atk - block re-earned`, not a drained stock.
+Measured over the 3,894 fights the player won in the same 4,620:
+
+| | |
+|---|---|
+| mean hp left at the killing blow | 16.11 |
+| mean enemy attack | 5.32 |
+| mean block earned on the last turn | 1.80 |
+| mean fight length | 4.77 resolves |
+| **can afford K=1 extra enemy turn** | **97.6% of wins** |
+| **K=2** | **95.3%** |
+| **K=3** | **93.0%** |
+| K=4 | 90.3% |
+
+(Re-measured against no block re-earned at all — the pessimistic end — K=1
+survives 90.0%, K=2 76.1%, K=3 57.1%, K=4 32.1%.)
+
+**93% of winners can afford three more enemy turns.** The tempo cost does not
+gate anything. The premise of the card was that only a slow defensive build
+could wait out the delay, and the measurement says nearly every build can — the
+player arrives at the killing blow with three times the enemy's attack in hand,
+and spends most of it on block, so the median extra turn costs 0 net damage (586
+of 3,894 last turns are free or negative). So the third corner closes as well:
+
+- **Harvest the excess.** No post-zero window exists (§ above).
+- **Re-time the same damage.** No upside; a strictly dominated card.
+- **Gate it on durability.** The gate does not discriminate — 93% pass.
+- **Add damage.** A universal buff, and the band tops out 1.5–2.4 points above
+  random.
+
+**Do not add this as a card either.** A 13th card is *predicted* to fail
+criterion 1 for the same structural reason item 1 was retired: BALANCE.md records
+that growing the pool lifts random faster than it lifts the best card (the 10th
+card moved random 12.0% → 16.0%), so the 1.48x ratio narrows by construction.
+That is a prediction, not a measurement — it is recorded as the reason the item
+is closed rather than the reason it should be retried.
+
+What does survive from this section is the observation underneath all of it:
+**difficulty in this game is set by turn count, not by damage totals.** That is
+why the two `ARMOR_GROW` enemies are the grind of the roster (Rust Golem 13.2
+resolves, Stone Sentinel 10.5) and the other seven die in about three. It is a
+real finding and it constrains future design harder than any one card does — but
+it is a finding, not a card, and closing 0.3 is what it costs.
 
 ## Baseline — measured, not remembered
 
