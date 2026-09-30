@@ -178,7 +178,7 @@ model.
 
 The premise the design rests on is that there is slack to convert — damage the
 player has already paid for and the game throws away, which a defensive build
-could bank instead of losing. **That slack is real and it is enormous. None of
+could bank instead of losing. **That slack is real and it is not small. None of
 it is reachable.**
 
 Over 4,620 fights on 600 seeds, with the HP clamp lifted in a sandbox copy so
@@ -186,28 +186,55 @@ the discarded damage is observable at all:
 
 | | |
 |---|---|
-| true damage dealt | 66,112 |
-| damage that removed HP | 34,712 |
-| **damage discarded past zero** | **31,400 — 47.5% of everything dealt** |
+| true damage dealt | 169,219 |
+| enemy total HP | 159,682 |
+| **damage discarded past zero** | **31,400 — 18.6% of everything dealt** |
 | fights whose killing blow overshot | 3,432 of 4,620 — 74.3% |
+| **excess on a NON-killing resolve** | **0 — in 0 of 4,620 fights** |
 
-Half of every point of damage in this game is deleted at
-`if enemy.hp <= 0: enemy.hp = 0`. (The un-clamped sandbox reproduces the
-shipped rules exactly — 600 runs, 4,620 fights, 111 wins either way — so this is
-the shipped game's own waste, not an artefact of measuring it.)
+Nearly a fifth of every point of damage in this game is deleted at
+`if enemy.hp <= 0: enemy.hp = 0`. The probe is not in the repo, because it
+cannot run against the shipped rules. To rebuild it: copy `dice.gd` and
+`run.gd` to a scratch project and **delete the single line `enemy.hp = 0`
+inside the `if enemy.hp <= 0:` block**. That is the whole patch. `run.gd`
+stays byte-identical to HEAD, and `dice.gd` differs from HEAD by that one
+line plus 12 lines of comment on `Face.pierce` — verified by diff, not
+assumed, because a measurement taken against a drifted copy is the one
+kind of number here that no sample size can rescue.
 
-And then the reason none of it can be banked, which is definitional rather than
+Then the reason none of it can be banked, which is definitional rather than
 statistical and is why no sample size would have found it: **a resolve can only
 overshoot by driving HP to or past zero, and a resolve that does that is the
 killing blow.** The fight ends that resolve. All 31,400 sits on the blow that
-ends the fight, and non-killing resolves produce exactly zero excess by
-construction — not "rarely", *zero*, in 4,620 fights.
+ends the fight. The bottom row is the direct measurement of that: across 20,127
+non-killing resolves dealing 103,107 damage — 60.9% of the total — the excess
+is **0 damage in 0 of 4,620 fights**. Not "rarely", *zero*.
 
-That kills both versions a DoT could have taken:
+> **This section's headline number was wrong by a factor of 2.5, and the
+> mistake was the same shape as the bug it went looking for.** The probe
+> accumulated `dealt_total` only inside the `enc.over` branch, so "total damage
+> dealt" was really *damage dealt on killing blows* — 66,112 against a true
+> 169,219. Every percentage in the first version of this table was therefore
+> "of all damage" when it was "of the last resolve of every fight", which is
+> what turned 18.6% into a headline of 47.5% and the sentence above into "half
+> of every point of damage in this game". **A measurement that divides by the
+> wrong denominator reports a clean, confident, wrong ratio** — and the honest
+> test of it was never a bigger sample, it was checking the denominator against
+> the rules. The clamp it was measuring is real; only the accounting around it
+> was not.
+>
+> The conclusion is unchanged and the reason survives the correction: the
+> excess is unreachable because the fight ends on the only resolve that can
+> produce any. What changes is the size of the prize, from "half the game's
+> damage" to under a fifth — which is a smaller prize, and still too much to
+> reach.
+
+That kills every version a DoT could have taken:
 
 - **Harvest the excess.** Impossible: the excess exists only on the blow that
   ends the fight, so there is no post-zero window for time-based damage to
-  occupy. This was the design, and the 47.5% is why it looked right.
+  occupy. This was the design, and the size of the surplus is why it looked
+  worth reaching for.
 - **Re-time the same damage instead.** A tax for rushing and a nothing for
   everyone else, since a deck that kills in 2–3 turns never collects a tick.
   Fights last a mean of 5.20 resolves and only 18.9% are still running after
