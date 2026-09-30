@@ -75,6 +75,39 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
   4. *Random Player* (plays blindly / baseline).
 - Measure: Does the gap between tactical strategies and the random player widen significantly beyond the baseline 2.0x?
 
+> **Answered 2026-09-30: no. The best policy is 1.55x, and it was never
+> measured before.** There is no `2.0x`, no skill-to-random ratio and no
+> baseline anywhere in the repo — `grep -rn "2\.0x\|skill.to.random" *.gd`
+> returns only `512x512` — so the bullet above recorded a target that nothing
+> checked, and the probe it names printed a table without ever computing a
+> ratio. `_balance.gd` now prints it on every run, over 1000 trials each at
+> `rng.seed = 7000 + i`:
+>
+> | policy | wins% | vs control | avg depth | vs control |
+> |---|---|---|---|---|
+> | `dice:nudge` (Tactical Nudger) | 25.4 | **1.55x** | 8.27 | 1.08x |
+> | `dice:reach` | 20.7 | 1.26x | 8.15 | 1.06x |
+> | `dice:read` | 18.3 | 1.12x | 7.99 | 1.04x |
+> | `<random>` (Random Player) | 16.4 | — | 7.69 | — |
+> | `dice:swing` (Greedy Gambler) | 13.1 | 0.80x | 7.57 | 0.98x |
+> | `dice:chip` | 0.3 | 0.02x | 3.11 | 0.40x |
+>
+> Two things worth reading off it. **The Nudger is the best bot in the game by
+> a clear margin** — nothing else reaches 21% — which is the strongest evidence
+> anywhere in this repo that Phase 0's Focus charge is a real decision rather
+> than a second button, since the only policy that presses it is the one that
+> wins. And **the depth ratio is 1.08x, not 1.55x**: tactics move the boss
+> fight, not how far a run gets, which is the same upgrade/depth bind the
+> probe's own notes warn about.
+>
+> This is deliberately **not** a gate. A hard check at 2.0x would be red on
+> every run, and `_check.gd`'s own argument is that a permanently red check is
+> a check nobody reads. Whether 1.55x is the skill ceiling this design wants is
+> the owner's call — the alternative readings (retune the policies upward, or
+> accept that a 9-fight roguelike with one correct policy has a narrow skill
+> band) are design decisions, not something to quietly re-tune until a number
+> in a plan comes out right.
+
 ### 2.2 Re-tune Outlier Cards & Rules
 - With distinct decision paths established, evaluate `BLESS`, acquired-die armor pierce, and paired faces against the new decision-driven gate.
 - Record all runs in `BALANCE.md`.

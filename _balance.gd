@@ -7,6 +7,7 @@ extends SceneTree
 
 const RunState = preload("res://run.gd")
 const Rules = preload("res://dice.gd")
+const Check = preload("res://_check.gd")
 const N := 1000
 ## Buckets for the per-depth survival line below. A run records the depth it
 ## stopped at, which is depth+1, and the boss bucket holds both wins and
@@ -374,6 +375,16 @@ func _go() -> void:
 	_axis_report()
 
 	print("strategy        wins%   avg depth   max")
+	# Collected for the check at the bottom: the twelve single-card rows and
+	# the control they are read against. Both share the `greedy` policy and
+	# the same per-trial seeds, so the only thing that differs between a card
+	# row and `<random>` is which card the bot prefers. The `dice:*` rows move
+	# the die policy and the paired rows bundle a card with a bot that plays
+	# it, so neither answers "is the pick decorative" and both are excluded.
+	var single_card_avg: Array[float] = []
+	var control_avg := 0.0
+	var control_wins := 0.0
+	var strategy: Array = []
 	for row in rows:
 		var id: String = row[1]
 		var pol: String = row[2]
@@ -416,7 +427,7 @@ func _go() -> void:
 						break
 				r.absorb(enc)
 				var reached: int = r.depth + 1
-				assert(reached <= RunState.FINAL_DEPTH + 1, "a run cannot pass depth 9")
+				Check.check(reached <= RunState.FINAL_DEPTH + 1, "a run cannot pass depth 9")
 				run_end = reached  ## how far this run got, counted once
 				hist[mini(run_end, SLOTS - 1)] += 1
 				if not enc.won:
@@ -442,7 +453,17 @@ func _go() -> void:
 				r.apply_upgrade(str(pick["id"]), rng)
 			depth_sum += run_end
 			depth_max = maxi(depth_max, run_end)
-		print("%-14s %5.1f%%   %6.2f   %3d" % [row[0], 100.0 * wins / N, depth_sum / N, depth_max])
+		var avg: float = depth_sum / N
+		var win_frac: float = float(wins) / N
+		if pol == "greedy":
+			if id == "<random>":
+				control_avg = avg
+				control_wins = win_frac
+			else:
+				single_card_avg.append(avg)
+		elif str(row[0]).begins_with("dice:"):
+			strategy.append([str(row[0]), win_frac, avg])
+		print("%-14s %5.1f%%   %6.2f   %3d" % [row[0], 100.0 * wins / N, avg, depth_max])
 		# Per-depth survival, conditioned on having reached that depth. This is
 		# the column that can actually see a card, and the reason is the bind
 		# between upgrades and depth: a run takes one card per depth cleared
@@ -490,7 +511,66 @@ func _go() -> void:
 		% (SLOTS - 2))
 	print("line, not wins%: upgrades and depth are the same number here, so wins%")
 	print("cannot separate a weak card from a build that simply went further")
-	quit()
+
+	# The verdict, which the docstring at the top of this file has been asking
+	# for since it was written: "if 'always take X' lands in the same band as
+	# 'pick at random', the pick is decorative and the game has no decision in
+	# it." Every run of this probe printed the table and answered nothing, and
+	# the bare `quit()` below meant the exit code was 0 either way -- so as
+	# gate 2 in PLAN.md this could not fail, and the `_check.gd` docstring's
+	# whole argument about `assert()` applies to this file and was never
+	# applied to it.
+	#
+	# The spread, not a level. A rebalance that moves every row together is
+	# the rebalance that actually happens, and a threshold on an absolute
+	# would turn red for it and teach everyone to ignore the gate. What would
+	# turn this red is cards being interchangeable, which is the failure worth
+	# catching. Measured: BULWARK 8.09 down to REFORGE 7.10, a spread of 0.99
+	# against a floor of 0.5.
+	var lo := INF
+	var hi := -INF
+	for a in single_card_avg:
+		lo = minf(lo, a)
+		hi = maxf(hi, a)
+	print("_balance.gd: %d single-card rows span %.2f avg depth (%.2f to %.2f), control %.2f"
+		% [single_card_avg.size(), hi - lo, lo, hi, control_avg])
+	# The control is the instrument. Every comparison above is relative to it,
+	# so a control that reads near zero means the bot is broken and the twelve
+	# rows beside it are measuring nothing.
+	Check.check(control_avg > 5.0,
+		"the <random> control is a real run, not a broken bot (avg depth %.2f)"
+		% control_avg)
+	# The parenthesised concatenation is load-bearing: `a + b % x` binds `%` to
+	# `b` alone, so the format specifiers have to be applied after the whole
+	# message is built. Getting that wrong raised "not all arguments converted"
+	# at runtime and the run still exited 0 -- a check that errors instead of
+	# failing is the same defect as one that cannot fail, one level deeper.
+	Check.check(hi - lo > 0.5,
+		("the card pick is not decorative: the single-card rows span %.2f avg "
+			+ "depth, and a spread at or under 0.5 means the cards are "
+			+ "interchangeable") % (hi - lo))
+
+	# PLAN.md 2.1 asked one question this file never answered: "does the gap
+	# between tactical strategies and the random player widen significantly
+	# beyond the baseline 2.0x?" There is no 2.0x, no ratio and no baseline
+	# anywhere in the repo -- `grep -rn "2\.0x\|skill.to.random" *.gd` returns
+	# only "512x512" -- so the phase recorded a target it never measured and
+	# every run since has been silent about it. Measured now, and deliberately
+	# NOT gated: the best policy is dice:nudge at 1.55x the control, which is
+	# under the bar, so a hard check would be red on every run and would teach
+	# the reader to ignore this gate entirely. The number is printed instead,
+	# and whether 1.55x is the skill ceiling the design wants is the owner's
+	# call, not something to re-tune to fit a sentence in a plan.
+	var best := ["", 0.0, 0.0]
+	for s in strategy:
+		if s[1] > best[1]:
+			best = s
+	if control_wins > 0.0:
+		print("_balance.gd: best policy %s is %.2fx the control's wins (%.1f%% vs %.1f%%), "
+			% [best[0], best[1] / control_wins, 100.0 * best[1], 100.0 * control_wins]
+			+ "and %.2fx its depth (%.2f vs %.2f). PLAN 2.1's bar is 2.0x."
+			% [best[2] / control_avg, best[2], control_avg])
+	quit(Check.report("_balance.gd"))
 
 
 ## PLAN.md 1.2's second bullet, measured: how often do the three cards on offer
