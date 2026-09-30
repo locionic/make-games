@@ -899,6 +899,50 @@ was reverted.
     the pessimistic reading -- that Ironhide has no answer at all and is just a
     stat block with extra words on the card.
 
+- 2026-09-30 **item 7, per-face armour pierce on an acquired die** —
+  **KEEP**. random `16.5% -> 16.4%`, depth `7.69 -> 7.69`, suite 8490/0. Band
+  holds, floor holds, ratio unchanged. Fang's `18` became a `15` that pierces
+  6, so the pierce is paid for rather than added.
+- 2026-09-30 **item 8, paired face on an acquired die** — **KEEP**. random
+  `15.9% -> 16.5%` (+0.6, allowance 3), depth `7.68 -> 7.69`, suite green.
+  Neutral is the result, not a disappointment: the same face on a starter cost
+  3.3 points. Item 8's own entry says "Numbers in the Log", which is why this
+  line exists.
+- 2026-09-30 **DISCIPLINED_MIND** — **DROP**, criterion 3. Depth `7.69 ->
+  7.21`, 0.39 under the `7.6` floor, a drop of **0.48 = 7.7 standard errors**,
+  so no re-run rescues it. `4.9%` wins and depth `6.46` in the 13-card table —
+  second-worst card, behind only REFORGE. Second attempt (`+1` Focus per
+  *turn*); the first (`+2` per *fight*) is in the initial commit. Denomination,
+  not price: re-rolls refill every turn and Focus does not, so the exchange
+  rate moves against the card the longer a fight runs.
+- 2026-09-30 **three archetype cards** (`PRECISE_STRIKE`, `GAMBLERS_RUSH`,
+  `BASTION_HOLD`) — all three in the pool. All three measured at the bottom of
+  the `greedy` table, which was a measurement of the bot: `greedy` never
+  presses Focus, never banks, never gambles, and those are the whole axes of
+  the cards. Two were re-measured as paired rows, card + its own bot against
+  the same bot on `<random>`: `GAMBLERS_RUSH` 16.3 vs 21.9 (**−5.6**),
+  `BASTION_HOLD` 1.3 vs 1.4 (−0.1). `PRECISE_STRIKE` has **no paired row** —
+  it was measured the day before and tied with random on wins — so its `+2.9`
+  in that section is a `greedy` delta and must not be read beside the two
+  edges. The mechanics are worth something to *something*; two of three pay
+  nothing for the player, and that is the open item, not a tuning one.
+
+> **This Log stopped being maintained for a day, and its own header is why that
+> is worth recording rather than just fixing.** The header says "append one line
+> per run" and four 2026-09-30 runs had no entry, so a session reading this file
+> could not tell whether they had been run at all. Item 8's entry makes the gap
+> explicit: it ends "**Numbers in the Log**", pointing at a Log that did not
+> have them.
+>
+> The cause is structural rather than careless. The `## 2026-09-29/30` sections
+> below carry fuller writeups, and once a run has one, a bullet here started to
+> feel like duplication — so new runs went into the sections and this list
+> silently stopped. The rule and the practice diverged with nothing recording
+> the divergence. **The four entries above are backfilled from numbers already
+> in this file** (items 7 and 8, the DISCIPLINED_MIND table, the paired rows);
+> none are re-measured, and where they and the sections below ever disagree, the
+> section wins.
+
 ## 2026-09-29 — Precision Strike, and how the status condition was nearly cut on a bug
 
 Phase 0.3's other half: a sticky status. The plan named Vulnerable/Exposed and
