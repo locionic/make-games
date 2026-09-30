@@ -9,6 +9,22 @@ extends Control
 const Rules = preload("res://dice.gd")
 const T = preload("res://theme.gd")
 
+## The boss test, named because two separate things read it and they must never
+## disagree about which fight this is: the gold sigil that makes the boss
+## unmistakable in a screenshot, and the haptic that fires when the boss lands
+## (PLAN.md 3.2 asks for haptics on "heavy hits and boss attacks"; only the
+## heavy-hit half was ever wired). The margin is wide -- The Devourer is 78 and
+## the runner up is Stone Sentinel at 40 -- but a new enemy landing in between
+## would start reading as a boss in both places at once, which is why this is a
+## const with a name and not a bare 60 typed into a ternary.
+const BOSS_HP := 60
+
+## Distinct from BOSS_HP on purpose: same number, unrelated meaning, and a
+## reader would rightly assume they were related. The ladder is 12 for a nudge,
+## 20/40 for a light/heavy hit you deal, 45 for a hit you take, and this for
+## one the boss lands.
+const HAPTIC_BOSS := 70
+
 signal fight_won
 signal fight_lost
 
@@ -238,7 +254,7 @@ func _draw_sigil() -> void:
 		var a := rot + TAU * float(i) / float(sides)
 		pts.append(at + Vector2(cos(a), sin(a)) * r)
 
-	var boss: bool = e.max_hp > 60
+	var boss: bool = e.max_hp > BOSS_HP
 	var edge: Color = T.GOLD if boss else T.DMG
 
 	# The panel is the largest thing on the fight screen and it was showing
@@ -504,7 +520,7 @@ func _on_end_turn() -> void:
 		if enc.hp < before_hp:
 			_sfx("hurt")
 			_float_text("-%d" % (before_hp - enc.hp), T.HP, _anchor(player_bar))
-			_haptic(45)
+			_haptic(HAPTIC_BOSS if enc.enemy.max_hp > BOSS_HP else 45)
 		_drain_log()
 		_refresh()
 

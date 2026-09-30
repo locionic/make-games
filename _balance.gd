@@ -351,6 +351,15 @@ func _go() -> void:
 	# threshold, and it would not be the mirror the plan asked for. Not
 	# started here.
 	#
+	# The roster already knew. `run.gd` carries the note at the depth-6 slot: "a
+	# reactive mirror of Ironhide was built here and cut, because its only
+	# correct play was to stop taking big faces, which is an absence rather than
+	# a decision." That cut was recorded as a design judgement and this is the
+	# mechanical explanation of it -- the same verdict, reached by measurement
+	# rather than by taste, and the reason it was reached. Both agree the bullet
+	# does not ship. What the earlier note could not say is *why no threshold
+	# would fix it*, and the 12.4% trigger rate is the answer to that.
+	#
 	# Measured in /tmp/guardbench, a fresh copy of dice.gd/run.gd/_check.gd with
 	# BEH_GUARD and react_high added to the rules. Nothing was shipped: the
 	# repo's dice.gd is byte-identical to the commit this was written against,
