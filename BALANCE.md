@@ -562,6 +562,51 @@ Strike through and note the verdict when tried.
    the 9-card pool, and this is the second one in two days whose premise had to
    be re-measured before it could be worked at all.** Re-measure an item's
    premise against the current pool before building it.
+4. **~~[x] Add DISCIPLINED_MIND, PLAN 1.1's fourth named card.~~ DROP
+   2026-09-30, on criterion 3, and it settles what PLAN 1.2's second axis is
+   worth.** 1.1 named four cards; three shipped (`GAMBLERS_RUSH`,
+   `BASTION_HOLD`, `PRECISE_STRIKE`) and this was the one still missing, so it
+   was the last unbuilt item in Phase 0/1. The spec is *"gain +1 Focus charge
+   every turn, but -1 re-roll"* — the certainty half of the trade the re-roll is
+   the gamble half of.
+   Built in full before measuring: the card, `Encounter.per_turn_focus`, the
+   per-turn refill in `roll_all`, an offer filter so the cost is always real (at
+   zero re-rolls it leaves the table rather than becoming a free Focus), and 13
+   checks — **8503 passed** — asserting *both* halves of the trade, because a
+   check on the gain alone would let an upside-only card past the one rule this
+   document forbids.
+   Measured on the 13-card table (N=1000, seeds 7000+):
+
+   | criterion | baseline | measured | |
+   |---|---|---|---|
+   | 1. best/random | `1.49x` | `1.66x` (ADD_DIE 16.6 / random 10.0) | widens ✓ |
+   | 2. random win% | `16.4%`, band 8–18% | `10.0%` | in band ✓ |
+   | 3. avg depth | `7.69`, floor `7.6` | **`7.21`** | **fails, 0.39 under** |
+
+   **The failure is not the borderline kind.** Criterion 3 is measured above at
+   `0.0623` SE, so 7.69 → 7.21 is a drop of **0.48 = 7.7 standard errors**, and
+   the note that "a lone failed criterion 3 should be re-run" is about a
+   1.46-sigma wobble. Re-running cannot rescue it. A card change keeps the
+   un-amended gate, so there is no band-and-delta route out either.
+   **The card measures worse than the trade it is.** `4.9%`, depth `6.46` — the
+   lowest depth of any card in the table and second-lowest win rate, behind only
+   REFORGE. And it is the exact mirror of `FOCUS` ("+1 re-roll every turn"),
+   which measured `5.8%` in the same run. **Both directions of the re-roll trade
+   are the two worst cards in the table**, which is the first direct measurement
+   of what PLAN 1.2's "Focus/Certainty" axis is worth here: **not much, and not
+   because the certainty was mistuned.** The re-roll is worth more than a
+   per-turn Focus charge, and this card is the only thing on the pool that ever
+   asks the player to give one up.
+   The shape is item 1's exactly — the card does what it says and the premise is
+   what fails. "Downside density, not card count, is the lever" predicts a real
+   cost making the whole table harder, and depth is what pays for it: every card
+   moved down together, and `<random>` fell 6.4 points. That is the difficulty
+   dial turning, not thirteen of the same card. Axis coverage barely moved, and
+   the new card landed where it was aimed — offers spanning three axes `45.8%` →
+   `46.0%`, the gamble axis `2` → `3`.
+   **Do not retry** without a different gate. **PLAN 1.1 is now closed** — three
+   cards shipped, this one measured and cut, and 1.2's second axis has no viable
+   card on it rather than a missing one.
 
 ### Rules (`dice.gd`) — band-and-delta applies, ratio does not
 
