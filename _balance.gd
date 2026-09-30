@@ -198,6 +198,26 @@ func _go() -> void:
 		# read 8.9% against a 16.5% control and looked broken. Per-depth it is
 		# level with the control until d=4 and then sits 5 points below at d=5
 		# and d=6 -- the card is real, it is just not worth a pick twice.
+		#
+		# The re-roll itself is not the problem, and the number for that is
+		# worth keeping because it is not recoverable from this table: an arm
+		# taking offer[0] exactly as `<random>` does -- same picks, same dice,
+		# same rng stream -- and handed a free +1 re-roll per pick reaches
+		# 90.7/91.6 at d=5/d=6 against the control's 87.1/87.0. So a re-roll is
+		# worth about +4 survival per pick. Forcing the budget to 1/2/3/4
+		# instead shows it saturating after the first (d=2 reads 94.8/95.8/
+		# 96.0/95.9), which is why the second copy is the worthless one: the
+		# bench's control takes FOCUS 0.58 times a run and a player who is
+		# told to prefer it takes it 1.62, and the extra ~1 pick is a near-
+		# worthless +0.5 spent instead of an average card's ~+4.
+		#
+		# The fix is ADD_DIE's clamp -- refuse FOCUS once `upgrades` has it --
+		# which recovers about two thirds of the gap (d=5 83.1 -> 85.2,
+		# d=6 82.6 -> 86.8 against the control's 87.1/87.0). It is one line in
+		# `roll_rewards` and it is NOT made here: it re-balances the reward
+		# pool, and build/android/dicefate.aab is signed at versionCode 5
+		# against the roster these numbers were shot for. Same shipping blocker
+		# as the bleed cut below, and it is a card-pool change, not a bug fix.
 		var line := ""
 		for d in range(1, SLOTS - 1):
 			if hist[d] > 0:
