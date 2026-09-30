@@ -41,6 +41,30 @@ func _go() -> void:
 	# on its own here anyway -- the die policy is the only way left to ask
 	# whether Phase 0.1's Focus is worth anything now that no card pays for it.
 	rows.append(["dice:nudge", "<random>", "nudge"])
+	# SUNDER was built and cut here, so the number is kept rather than re-run.
+	# It was PLAN.md 0.3's last unbuilt bullet: wounds, one per die that dealt
+	# damage, capped at 5, bleeding for their count at the top of the enemy's
+	# turn and losing one each time -- a status like Exposed, and it bypassed
+	# armour like thorns. Measured under `greedy` at 12.7% wins and 7.68 depth,
+	# against the `<random>` row's 15.6% and 7.76 *from the same run*, with
+	# SUNDER still in the pool it was drawing from. Read the 15.6% as that row,
+	# not as whatever it says today: with the card cut the pool is 12 again and
+	# the same row now measures 16.5%, which is a different pool and not a
+	# like-for-like control for anything. At 1000 runs the 2.9-point gap is
+	# about 2.6 standard errors, so it is a real drop and not a sample.
+	# Two reasons, and only the first is about the card:
+	#   1. It is a rider, not a decision. Every die that lands wounds on its own,
+	#      with nothing for the player to weigh, so it is a small damage upgrade
+	#      competing for the same pick against SHARPEN, VIGOR and ADD_DIE -- and
+	#      losing, because 5+4+3+2+1 is worth less than one turn of Sunder.
+	#   2. The build it was written to serve does not exist. 0.3 asks for bleed
+	#      that lets a slow defensive build win, and the `bank` policy -- the one
+	#      that banks and turtles -- scores 1.4%. There is no slow build here for
+	#      damage over time to reward, so the card has no target to be good for.
+	# A version worth keeping needs the wound to be a choice: a die may spend its
+	# damage opening a wound instead of dealing it, which is a per-die toggle in
+	# fight.gd and a real feature rather than a rule. That is not a smaller patch
+	# to this one, so it is not started here.
 
 	print("strategy        wins%   avg depth   max")
 	for row in rows:
