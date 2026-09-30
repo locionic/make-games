@@ -61,7 +61,15 @@ const SFX := {
 ## for a device pass, and why these numbers are written down rather than acted
 ## on here. Re-measure if a file is replaced.
 const SFX_VOL := -7.0
-const SFX_POOL := 6  ## a clatter and a hit can overlap; one player would eat the other
+## a clatter and a hit can overlap; one player would eat the other. Measured,
+## not assumed: one resolve asks for at most three -- the resolve is aggregated,
+## so a full six-dice hand still gets a single strike for the total dealt, plus
+## a block and a hurt -- against six. Half the pool spare, and reassignment is
+## silent when it runs out, since play() on a busy player just restarts it.
+## `shot.gd --check` marks a sound and fires a resolve that provably deals
+## damage, then checks the sound survived; cutting the pool to 1 fails that and
+## two of the audio checks that predate it.
+const SFX_POOL := 6
 
 var run: RunState
 var screen: Control

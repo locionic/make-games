@@ -405,8 +405,26 @@ func _run() -> void:
 				break
 	plated._refresh()
 	await _settle()
+	# The marker the resolve has to leave alone. Quiet, so a regression cuts a
+	# sound nobody can hear into rather than making the run unbearable.
+	game.play_sfx("roll", -60.0)
 	var hp_before: int = plated.enc.enemy.hp
 	plated._on_end_turn()
+	# SFX_POOL's comment claims the pool is big enough that "a clatter and a hit
+	# can overlap; one player would eat the other". That is a claim about how
+	# many sounds one resolve asks for, and nothing checked it.
+	#
+	# Here rather than at the first end turn in the file, because this is the
+	# one that provably deals damage -- the other returned early on its guards
+	# and fired nothing, so a marker placed there survived no matter what the
+	# pool was sized. A check that passes because nothing happened is worse than
+	# no check, and it took a pool of 2 to notice: with the pool cut to 2 this
+	# section still had to fail, and at the first end turn it passed.
+	_check(_busy(game) >= 2,
+		"the resolve fired sounds, so the pool check below is not vacuous")
+	_check(_sfx_alive(game, "roll"),
+		"a full resolve does not eat a sound already playing (%d of %d players in use)"
+		% [_busy(game), game._sfx.size()])
 	# Exactly one frame, and it is load-bearing. A float fades over 0.7s from a
 	# 0.25s delay and frees itself at 0.95s, and this container's software GL
 	# renders at about a third of a second a frame -- so waiting three frames
@@ -522,6 +540,26 @@ func _last_stream(game) -> AudioStream:
 
 func _last_vol(game) -> float:
 	return _last_player(game).volume_db
+
+
+## How many pool players are sounding at once. The pool's size is only
+## justified if this stays under it.
+func _busy(game) -> int:
+	var n := 0
+	for p in game._sfx:
+		if p.playing:
+			n += 1
+	return n
+
+
+## Whether a sound of this name is still sounding on some pool player. A name
+## rather than a player index, because round-robin moves: what the pool must not
+## do is eat the sound, not use a particular slot.
+func _sfx_alive(game, name: String) -> bool:
+	for p in game._sfx:
+		if p.playing and p.stream == game.SFX[name]:
+			return true
+	return false
 
 
 ## Did this sound go off at any point in the turn? Scans the whole pool rather
