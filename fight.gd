@@ -413,6 +413,7 @@ func _on_card_pressed(i: int) -> void:
 		_sfx("block", 2.0)
 		_drain_log()
 		_refresh()
+		_nudge_flash(i)
 		return
 	if bank_armed:
 		# Bank is reversible, so a mis-tap here costs nothing -- the mode stays
@@ -460,6 +461,7 @@ func _on_reroll() -> void:
 	enc.resolve_rerolls(rng)
 	_drain_log()
 	_refresh()
+	_reroll_spin()
 
 
 func _on_end_turn() -> void:
@@ -467,13 +469,23 @@ func _on_end_turn() -> void:
 		return
 	var struck: int = enc.enemy.hp
 	var before_block: int = enc.block
+	var was_exposed: int = enc.enemy.exposed
 	enc.resolve_faces()
-	if enc.enemy.hp < struck:
+	var dealt: int = struck - enc.enemy.hp
+	if dealt > 0:
 		_sfx("strike")
 		shake(1.0)  ## the punch lands on the panel, not just the bar
 		_flash_sigil()
+		_float_text("-%d" % dealt, T.DMG, _anchor(enemy_sigil))
+		_haptic(40 if dealt >= 10 else 20)
+	if enc.last_deflected > 0:
+		_float_text("%d deflected" % enc.last_deflected, T.MUTED,
+			_anchor(enemy_sigil) + Vector2(0, 24), T.F_SMALL)
 	if enc.block > before_block:
 		_sfx("block")
+		_float_text("+%d" % (enc.block - before_block), T.BLOCK, _anchor(player_bar))
+	if enc.enemy.exposed > was_exposed:
+		_float_text("EXPOSED", T.REROLL, _anchor(enemy_sigil) - Vector2(0, 28), T.F_SMALL)
 	_drain_log()
 	_refresh()
 
@@ -484,6 +496,8 @@ func _on_end_turn() -> void:
 		# block would otherwise thud exactly like a killing blow.
 		if enc.hp < before_hp:
 			_sfx("hurt")
+			_float_text("-%d" % (before_hp - enc.hp), T.HP, _anchor(player_bar))
+			_haptic(45)
 		_drain_log()
 		_refresh()
 
@@ -534,15 +548,19 @@ func _drain_log() -> void:
 	enc.log_lines.clear()
 
 
-## Flicker every card through random faces, then settle them on the real roll.
-func _spin() -> void:
+## Flicker `idxs` through random faces, then settle them on the real roll.
+## One function for the dealer's shuffle and the re-roll's clatter: the
+## vocabulary is the same -- dice moving, faces changing -- so it is one piece
+## of code with a different list and a shorter run, not two animations that
+## drift apart the first time one of them is tuned.
+func _flicker(idxs: Array[int], steps: int) -> void:
 	busy = true
 	_refresh()
-	for _step in 5:
-		for i in cards.size():
+	for _step in steps:
+		for i in idxs:
 			_paint_card(i, enc.dice[i].faces[rng.randi_range(0, 5)], false)
 		await get_tree().create_timer(0.035).timeout
-	for i in cards.size():
+	for i in idxs:
 		_paint_card(i, enc.dice[i].face(), true)
 		var c := cards[i]
 		c.pivot_offset = c.size / 2.0
@@ -552,6 +570,59 @@ func _spin() -> void:
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	busy = false
 	_refresh()
+
+
+## The deal: every card, long enough to read as a throw onto the table.
+func _spin() -> void:
+	var all: Array[int] = []
+	for i in cards.size():
+		all.append(i)
+	_flicker(all, 5)
+
+
+## The re-roll's clatter. Only the dice that actually moved flicker -- `spent`
+## is the rules layer's record of exactly those, and shaking the whole hand
+## would tell the player four dice changed when one did.
+func _reroll_spin() -> void:
+	var moved: Array[int] = []
+	for i in cards.size():
+		if enc.dice[i].spent:
+			moved.append(i)
+	if moved.is_empty():
+		return
+	_flicker(moved, 3)
+
+
+## The Focus spend's signature: gold, and it rises. A re-roll is a gamble and
+## looks like one -- faces tumbling, a clatter, a card you could not predict. A
+## nudge is the opposite trade, a charge spent for a *guaranteed* step, so it
+## gets the opposite treatment: nothing tumbles, the card goes gold and lifts,
+## and the player is told "this was certain" on the same channel that says "this
+## was luck". PLAN.md 3.1, and the reason these are two functions and not one:
+## a spend the player cannot predict must not be dressed as a spend they can.
+func _nudge_flash(i: int) -> void:
+	var c := cards[i]
+	# Read the dim the refresh just set rather than assuming white. A focus
+	# always spends the die, so the card is SPENT_DIM by now, and tweening back
+	# to white would leave a spent die looking unspent until the next repaint.
+	var rest: Color = c.modulate
+	# Pivot on the bottom edge so the pop reads as lifting *out* of the row. A
+	# centre pivot inflates in place, which is the re-roll's bounce -- the one
+	# thing these two must not look alike.
+	c.pivot_offset = Vector2(c.size.x * 0.5, c.size.y)
+	var tw := create_tween()
+	tw.tween_property(c, "scale", Vector2(1.12, 1.12), 0.1)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(c, "modulate", T.GOLD_LIGHT, 0.1)
+	tw.tween_property(c, "scale", Vector2.ONE, 0.18)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(c, "modulate", rest, 0.18)
+	# The rising tick, named "Tick" and not "Float" so the harness can tell a
+	# certainty from a hit. A re-roll must never raise one of these, and that
+	# is the only part of this claim a screenshot could catch.
+	_float_text("FOCUS", T.GOLD, _anchor(c) - Vector2(0, c.size.y * 0.5),
+		T.F_SMALL, "Tick")
+	_haptic(12)
 
 
 ## Draw one card. `final` is false mid-spin, so a card shows a bare number rather
@@ -645,6 +716,71 @@ func shake(power: float = 1.0) -> void:
 		tw.tween_property(shake_root, "position",
 			Vector2(rng.randf_range(-7, 7), rng.randf_range(-4, 4)) * power, 0.04)
 	tw.tween_property(shake_root, "position", Vector2.ZERO, 0.06)
+
+
+## Phase 3.2: the number where it lands, instead of a log line asking the player
+## to read it. The label owns itself -- nothing holds a reference and nothing
+## has to free it, so a fight that ends mid-float takes the label with it and
+## leaves no orphan on the card.
+func _float_text(txt: String, col: Color, at: Vector2, size: int = T.F_TITLE,
+		tag: String = "Float") -> void:
+	var l := Label.new()
+	l.text = txt
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	# An outline, because these land over the panel and the sigil alike and a
+	# red number on a dark card is otherwise unreadable at a glance.
+	l.add_theme_color_override("font_outline_color", T.BG)
+	l.add_theme_constant_override("outline_size", 4)
+	l.z_index = 50
+	# Named so the screenshot harness can count them. The floats live under a
+	# second of tween and a screenshot of the idle fight screen never catches one,
+	# so "the juice renders" is otherwise unobservable -- and a regression that
+	# stopped the numbers appearing would pass every gate. `tag` exists so a
+	# certainty (a Focus tick) is not counted as a hit: they are the one pair of
+	# effects that must never be confused for each other.
+	l.name = tag
+	# In a group as well, because the name alone cannot be counted with. A turn
+	# throws up to four of these as siblings and add_child() keeps sibling names
+	# unique, so only the first is ever called "Float" -- the rest come back as
+	# "@Float@2", "@Float@3", and a find_children("Float") reports a turn of
+	# perfectly good feedback as missing. The group is the tag that survives all
+	# of them; the name stays because it is what a reader sees in the tree.
+	l.add_to_group("float")
+	add_child(l)
+	# reset_size() is synchronous, so the half-width offset below is real and the
+	# number is centred on its anchor rather than hanging off its top-left.
+	l.reset_size()
+	# The panel's inverse global transform, not the raw point. The panel sits
+	# inside a MarginContainer and a VBoxContainer, so its local origin is nowhere
+	# near (0,0) and a global point dropped straight into `position` lands in the
+	# wrong place by however far down the screen the fight card happens to sit.
+	#
+	# Parented to the panel rather than to shake_root, which the sigil lives in,
+	# so the float does not ride the punch. shake_root is a MarginContainer, and a
+	# Container force-sets the rect of every direct child each layout pass -- which
+	# is what parked the numbers against the panel corner. The punch is 7px for a
+	# fifth of a second, so a number holding its ground while the card jitters
+	# reads as the number landing on a target, not as a mismatch.
+	l.position = get_global_transform().affine_inverse() * at \
+		- Vector2(l.size.x * 0.5, 0.0)
+	var tw := create_tween()
+	tw.tween_property(l, "position:y", l.position.y - 34.0, 0.7)
+	tw.parallel().tween_property(l, "modulate:a", 0.0, 0.7).set_delay(0.25)
+	tw.tween_callback(l.queue_free)
+
+
+## Mid-point of a control, in the same space the float is placed in.
+func _anchor(c: Control) -> Vector2:
+	return c.global_position + c.size * 0.5
+
+
+## A handset buzz for the hits worth feeling. Gated on the mobile feature so the
+## desktop and web builds never call into it -- vibrate_handheld is a no-op off
+## Android, but the intent is clearer than relying on that.
+func _haptic(ms: int) -> void:
+	if OS.has_feature("mobile"):
+		Input.vibrate_handheld(ms)
 
 
 ## The enemy flinches when a face lands. Same beat as `shake`, aimed at the

@@ -207,6 +207,14 @@ class Encounter:
 	var block: int = 0
 	var turn: int = 0
 	var log_lines: Array[String] = []
+	## How much armour ate on the last resolve_faces(): the gap between the
+	## damage the faces were worth and what actually reached the enemy. Kept
+	## here rather than recomputed in the UI, because "what the card said" and
+	## "what armour took" are the same loop in resolve_faces() -- duplicating
+	## it in fight.gd is how the two drift apart and the number lies. Reset at
+	## the top of every resolve, so a stale value from the previous turn can
+	## never be shown as this turn's.
+	var last_deflected: int = 0
 	var over: bool = false
 	var won: bool = false
 	## Copied from the run so a fight can resolve without knowing about it.
@@ -477,6 +485,7 @@ class Encounter:
 		var blk := 0
 		var gained := 0
 		var dealt := 0
+		last_deflected = 0
 		# Hits a BRACE would feed on. Counted off the face, not off what survived
 		# armour: Blade 4 reads as 4 on the card, so it counts as 4.
 		var low := 0
@@ -493,7 +502,9 @@ class Encounter:
 			# Armour applies per die, so one big hit beats two small ones.
 			# `face_hit`, not `f.dmg`: a paired face reads its doubled number on
 			# the card, and the resolve has to be the card's arithmetic.
-			dealt += enemy.pierce(face_hit(i), pierce)
+			var through := enemy.pierce(face_hit(i), pierce)
+			dealt += through
+			last_deflected += maxi(0, face_hit(i) - through)
 			if dice[i].rushed > 0 and rush:
 				dealt += maxi(RUSH_FLOOR, dice[i].rushed / RUSH_SHARE)
 			hardest = maxi(hardest, face_hit(i))
@@ -508,7 +519,9 @@ class Encounter:
 			var hf := dice[banked].face()
 			blk += hf.block
 			gained += hf.rerolls
-			dealt += enemy.pierce(face_hit(banked), pierce)
+			var cashed_through := enemy.pierce(face_hit(banked), pierce)
+			dealt += cashed_through
+			last_deflected += maxi(0, face_hit(banked) - cashed_through)
 			hardest = maxi(hardest, face_hit(banked))
 			if face_hit(banked) > 0 and face_hit(banked) < Enemy.REACT_LOW:
 				low += 1
@@ -877,6 +890,7 @@ static func _focus_tests() -> void:
 	_bank_tests()
 	_expose_tests()
 	_rush_tests()
+	_deflect_tests()
 	_bastion_tests()
 	_pair_tests()
 
@@ -953,6 +967,44 @@ static func _rush_tests() -> void:
 	# round away to nothing is not a bonus.
 	Check.check(want == Encounter.RUSH_FLOOR, "a one-point gain still pays the floor")
 	Check.check(on.dice[0].rushed == 0, "the mark is paid out once and cleared")
+
+
+## Armour eats faces, and the fight screen wants to say how much. This is the
+## number behind the deflection callout, so it has to be per-die: armour
+## applies face by face, so 2 and 3 into armour 4 are both swallowed whole,
+## while 9 alone punches 5 through. Summing the faces first and subtracting
+## once would report 1 absorbed where the truth is 5.
+static func _deflect_tests() -> void:
+	var e := Encounter.new(Encounter.warden(),
+		[Encounter.library()[0], Encounter.library()[0]])  ## Blade, Blade
+	e.dice[0].up = 0   ## "2"
+	e.dice[1].up = 1   ## "3"
+	var hp_before: int = e.enemy.hp
+	e.resolve_faces()
+	Check.check(e.enemy.hp == hp_before, "armour 4 swallows a 2 and a 3 whole")
+	Check.check(e.last_deflected == 5,
+		"and absorbs both, not their sum minus one armour hit (got %d)" % e.last_deflected)
+
+	# A big face still gets through, and only the excess is deflection.
+	var b := Encounter.new(Encounter.warden(), [Encounter.library()[0]])
+	b.dice[0].up = 5   ## "9"
+	b.resolve_faces()
+	Check.check(b.enemy.hp == 28 - 5, "a 9 lands 5 through armour 4")
+	Check.check(b.last_deflected == 4, "and only the 4 that armour ate is reported")
+
+	# Reset per resolve. A stale value shown as this turn's absorb is worse
+	# than showing nothing, so an unarmoured enemy must report a clean zero.
+	var g := Encounter.new(Encounter.grunt(), [Encounter.library()[0]])
+	g.dice[0].up = 5
+	g.resolve_faces()
+	Check.check(g.enemy.hp == 22 - 9, "an unarmoured enemy takes the face whole")
+	Check.check(g.last_deflected == 0,
+		"and reports no deflection rather than last turn's (got %d)" % g.last_deflected)
+
+	# A resolve that hits nothing must still clear it.
+	var q := Encounter.new(Encounter.warden(), [Encounter.library()[2]])  ## Ward
+	q.resolve_faces()
+	Check.check(q.last_deflected == 0, "a block-only resolve deflects nothing")
 
 
 ## A seeded RNG, so the tests that care about *what* was rolled can say so

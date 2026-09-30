@@ -119,6 +119,14 @@ func _run() -> void:
 	panel._on_reroll()
 	assert(_last_stream(game) == game.SFX["roll"], "and the re-roll clatters again")
 	assert(_last_vol(game) < 0.0, "quieter than the opening roll, so the two are tellable apart")
+	# PLAN.md 3.1: a nudged die and a re-rolled die must not look alike. Only half
+	# of that is observable -- the tumble is a tween no idle screenshot catches --
+	# so the half that bites is that the gold tick belongs to Focus alone. A
+	# gamble dressed in certainty's colours is the exact failure the split
+	# animation exists to prevent.
+	assert(panel.find_children("Tick", "Label", false, false).is_empty(),
+		"a re-roll raises no tick -- the gold tick is Focus's alone")
+	await _settle()
 
 	# Focus, end to end through the UI rather than the rules layer. The mode has
 	# to disarm itself, and a cancelled arm has to cost nothing -- a mode that
@@ -143,6 +151,12 @@ func _run() -> void:
 	assert(panel.enc.dice[target].face().worth() > was, "the focused die is strictly better")
 	assert(panel.enc.dice[target].spent, "and is spent, so it cannot be re-rolled as well")
 	assert(_last_stream(game) == game.SFX["block"], "focus chimes, the set's other rising sound")
+	# The other half of 3.1. The tick is created synchronously and floats for
+	# 0.7s, so it is still findable on the very next line -- and it is named
+	# "Tick" rather than "Float" so this cannot be satisfied by a damage number,
+	# which is what gives the re-roll assertion above its meaning.
+	assert(panel.find_children("Tick", "Label", false, false).size() == 1,
+		"and a gold tick rises off the card Focus just spent")
 
 	# Bank, through the same three doors. The rule the UI has to protect is the
 	# mutual exclusion: Focus and Bank are both "spend a resource on one die", so
@@ -320,6 +334,107 @@ func _run() -> void:
 	assert(plated.enemy_tag.get_theme_color("font_color") == T.GOLD,
 		"in gold, the colour everything else uses for live-and-act-on-it")
 	_grab(8, "fight-armoured")
+
+	# The impact frame. Every grab above photographs the fight at rest, and the
+	# Phase 3.2 numbers live and die inside a tween, so nothing in this harness
+	# has ever proved one reaches the screen -- a regression that stopped the
+	# damage numbers appearing would pass all eight. Into SPARE: Play caps the
+	# listing at 8 and spending a real slot on an action frame is not this file's
+	# call to make.
+	#
+	# The roll is loaded rather than rolled. A real roll of Ward and rust faces
+	# deals nothing, so the frame would photograph a turn with no number on it
+	# and pass every assertion while proving nothing -- which is exactly what the
+	# first version of this did. One Blade showing its 9 into a plate of 4: 5
+	# lands and the plate eats the other 4, so the damage number and the
+	# deflection callout both come off a single face. The Wards the roll left in
+	# place bank block, which is the third number on the card.
+	#
+	# The plate comes down to 4 for this. At the cap of 12 the top Blade face is 9
+	# and nothing a single die can show ever gets through, so a full-plated enemy
+	# photographs a turn where the plate eats everything and the only number on
+	# the card is how much it ate.
+	plated.enc.enemy.exposed = 0
+	plated.enc.enemy.hp = 40
+	plated.enc.enemy.armor = 4
+	plated._on_roll()
+	await _settle()
+	var blade: Array = Rules.Encounter.library()[0].faces
+	plated.enc.dice[0].faces = blade
+	plated.enc.dice[0].up = 5
+	# Every die but the pinned Blade is pinned too, to the first face of its
+	# own that deals nothing. The fight panel seeds its rng from the clock
+	# (`rng.randomize()` in _build_panel), so an unpinned hand is a different
+	# hand on every run -- and this section asserts exact totals off it, 5
+	# through the plate and exactly 4 deflected. One stray damage face in
+	# the other three dice moved both numbers and failed the gate on a coin
+	# flip, which is not what a regression harness is for: the screenshot
+	# and the arithmetic it teaches both have to be the same run to run.
+	for i in range(1, plated.enc.dice.size()):
+		var hand: Rules.Die = plated.enc.dice[i]
+		for fi in hand.faces.size():
+			if hand.faces[fi].dmg == 0:
+				hand.up = fi
+				break
+	plated._refresh()
+	await _settle()
+	var hp_before: int = plated.enc.enemy.hp
+	plated._on_end_turn()
+	# Exactly one frame, and it is load-bearing. A float fades over 0.7s from a
+	# 0.25s delay and frees itself at 0.95s, and this container's software GL
+	# renders at about a third of a second a frame -- so waiting three frames
+	# lands past the fade but before the free, and the label is still in the
+	# tree, still findable, and completely invisible. The first version of this
+	# asserted on three such labels and photographed an empty card.
+	await process_frame
+	var floats: Array = []
+	# By group, not by name: add_child() keeps sibling names unique, so only
+	# the first float of a turn is called "Float" and the rest arrive as
+	# "@Float@2" and "@Float@3". Filtered to this panel because a float from an
+	# earlier fight can still be in the air.
+	for f in get_nodes_in_group("float"):
+		if f.get_parent() == plated:
+			floats.append(f)
+	# Asserted on the numbers, not just the count: a count alone is satisfied by
+	# one lone block float while a whole turn's worth of feedback is missing.
+	var seen := ""
+	for f in floats:
+		var l := f as Label
+		seen += l.text + " / "
+		# Present in the tree is not the same as on the card. A float that has
+		# already faded is found by every query above and photographs as nothing.
+		assert(l.modulate.a > 0.5, "the number is still opaque when the frame is taken")
+	# The card has to agree with the rules layer, so every expected number is read
+	# off the encounter after the resolve rather than written in here. A literal
+	# would be a second copy of the rules to keep in step, and the first version
+	# of this asserted "4 deflected" against a fixture that in fact produced 5.
+	assert(seen.find("-%d" % (hp_before - plated.enc.enemy.hp)) != -1,
+		"the damage that got through is on the card (saw: %s)" % seen)
+	assert(seen.find("%d deflected" % plated.enc.last_deflected) != -1,
+		"and so is the damage the plate ate (saw: %s, last_deflected=%d)"
+		% [seen, plated.enc.last_deflected])
+	# The block float is deliberately not asserted on. The enemy's turn runs inside
+	# _on_end_turn() and spends what was banked, so there is no reading of enc.block
+	# after the fact that is the number the float showed -- and the block that got
+	# banked came off the three dice this fixture does not control, so it is not
+	# even the same number twice. `seen` carries it when it happens; the two
+	# numbers above are the ones a test can actually pin down.
+	# Every float is anchored to the sigil or the player's bar and the tween only
+	# lifts it 34px, so nothing legitimate lands further than 80px from one of
+	# them. This is the invariant the placement bug broke: feeding a global point
+	# into a local `position` parked every number against the panel's top-left
+	# corner, which still *looked* like a number on the card in a still.
+	var anchors: Array[Vector2] = [
+		plated.enemy_sigil.global_position + plated.enemy_sigil.size * 0.5,
+		plated.player_bar.global_position + plated.player_bar.size * 0.5,
+	]
+	for f in floats:
+		var near := false
+		for a in anchors:
+			if (f as Control).global_position.distance_to(a) < 80.0:
+				near = true
+		assert(near, "the float lands on the control it describes, not the panel corner")
+	_grab(9, "fight-impact", SPARE)
 
 	if had_save:
 		DirAccess.copy_absolute(BACKUP, SAVE)
