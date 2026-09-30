@@ -650,6 +650,8 @@ func _run() -> void:
 	await _settle()
 	_ergonomics(game, "six-dice hand")
 
+	_check_store_art()
+
 	if had_save:
 		DirAccess.copy_absolute(BACKUP, SAVE)
 		DirAccess.remove_absolute(BACKUP)
@@ -957,6 +959,78 @@ func _collect(n: Node, out: Array[Button]) -> void:
 		out.append(n)
 	for child in n.get_children():
 		_collect(child, out)
+
+
+## The Assets table in `play/LISTING.md` states a spec and a measured value for
+## three sets of files, and nothing in the repo checked either column. The
+## values are right -- they were read off the files by hand when this was
+## written -- and "right by hand" is the same as unchecked the first time a
+## re-shoot lands at another resolution, a screenshot arrives with an alpha
+## channel, or a ninth one is dropped in the folder. All three are rejected by
+## Play at upload, which is the worst place to find out.
+##
+## Read-only, so it runs in `--check` like everything else here, and at the end
+## of the flow so that in write mode it inspects what this run just produced
+## rather than what happened to be on disk when it started.
+##
+## The alpha test is `Image.get_format()`, not `Image.detect_alpha()`, and the
+## difference is the whole reason this function is worth having. `detect_alpha`
+## inspects pixel *values*, so it reports ALPHA_NONE for an image whose alpha
+## channel is present and entirely opaque -- which `icon.png` is, every pixel of
+## it. Using it here failed the icon. Worse, the same call in the other
+## direction would have passed a screenshot carrying a fully opaque alpha
+## channel, which is exactly the file Play rejects: one check, wrong in both
+## directions, and green either way. The format is the channel: FORMAT_RGB8
+## (4) is no alpha, FORMAT_RGBA8 (5) is alpha.
+func _check_store_art() -> void:
+	var dir := "res://play/screenshots"
+	var shots: Array[String] = []
+	for f in DirAccess.get_files_at(dir):
+		if f.ends_with(".png"):
+			shots.append(f)
+	# Both halves. "Exactly 8" is the table's Status column; "at the cap" is the
+	# one that costs a whole upload, because Play rejects a ninth rather than
+	# quietly dropping it.
+	_check(shots.size() == 8,
+		"the listing holds 8 screenshots, which is also Play's cap (found %d)" % shots.size())
+	for f in shots:
+		var img := Image.load_from_file("%s/%s" % [dir, f])
+		_check(img != null, "%s loads as an image at all" % f)
+		if img == null:
+			continue
+		_check(img.get_size() == Vector2i(540, 960),
+			"%s is 540x960 -- 9:16, and over Play's 320px floor (%s)" % [f, img.get_size()])
+		_check(img.get_format() == Image.FORMAT_RGB8,
+			"%s has no alpha channel at all, which Play rejects (format %d)"
+			% [f, img.get_format()])
+	# The icon is the one asset that *wants* alpha, so both directions are
+	# asserted rather than one rule applied twice. A single "check the format"
+	# helper would have had to know which way round each of these goes.
+	#
+	# Each load is checked before it is used rather than `a != null and ...`,
+	# because the message interpolates from the image and a missing asset would
+	# then be a method call on null -- a crash where the honest outcome is a
+	# failed check. An absent file is a listing that cannot be uploaded, which is
+	# the exact thing this function exists to say.
+	var icon_bytes := FileAccess.get_file_as_bytes("res://icon.png")
+	_check(icon_bytes.size() > 0, "the launcher icon is on disk at all")
+	_check(icon_bytes.size() <= 1024 * 1024,
+		"and under Play's 1024 KB cap (%d bytes)" % icon_bytes.size())
+	var icon := Image.load_from_file("res://icon.png")
+	_check(icon != null, "and loads as an image")
+	if icon != null:
+		_check(icon.get_size() == Vector2i(512, 512),
+			"the launcher icon is 512x512, as the table says (%s)" % icon.get_size())
+		_check(icon.get_format() == Image.FORMAT_RGBA8,
+			"and it really does carry an alpha channel (format %d)" % icon.get_format())
+	var feat := Image.load_from_file("res://play/feature.png")
+	_check(feat != null, "the feature graphic is on disk and loads")
+	if feat != null:
+		_check(feat.get_size() == Vector2i(1024, 500),
+			"the feature graphic is 1024x500, as the table says (%s)" % feat.get_size())
+		_check(feat.get_format() == Image.FORMAT_RGB8,
+			"with no alpha channel, which is the other half of that row (format %d)"
+			% feat.get_format())
 
 
 ## Set by `--check`. The ergonomics gate lives here because this is the only
