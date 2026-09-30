@@ -187,6 +187,22 @@ the test pinning this needed a *fourth* `record_run` to fail against an
 uncapped build — three runs leave the counter at 3 either way, so a check
 placed at the third is a check that cannot fail.
 
+The rest of the block was audited the same way and holds, so it is listed here
+once rather than re-derived: `run.gd`'s `self_test` now asserts the four named
+enemies' names *and* the behaviour each is described as having, plus the boss's
+78 health, 5 armour and enrage — retag Bloodletter or rebalance the Devourer and
+the suite goes red. Checked by hand and holding: "nine fights" (`FINAL_DEPTH + 1`),
+"four dice" (`POOL_SIZE`), "one re-roll" (`base_rerolls`), "one Focus and one
+Bank" per fight (`base_focus`, granted at the fight and not each turn),
+Rust Golem's armour growth meeting its ceiling at `ARMOR_GROW_CAP` = 12, which is
+what Sunder's `cleave` 12 exists to answer, "Sharpen"/"Bless"/"New Die" matching
+the `UPGRADES` table word for word, and "playable offline" — there is no
+`http`, `socket` or `request` call in any script in this repo.
+
+Two things in the block stay unverifiable from here and are the owner's to set
+in the Console, not code claims: the "no ads / no in-app purchases" lines and
+the developer's own name and review text.
+
 ```
 Nine fights stand between you and The Devourer. You bring four dice.
 

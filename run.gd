@@ -465,6 +465,27 @@ static func self_test() -> void:
 		var e := r.enemy_for(d)
 		Check.check(e.hp > 0, "every enemy has health")
 
+	# The roster as play/LISTING.md describes it, clause by clause. The store
+	# copy is the one surface Play indexes and none of it was checkable, which
+	# is how it came to sell a daily that seeded the wrong thing. These are the
+	# enemy claims, so they are asserted here: if a behaviour is retagged or the
+	# boss is rebalanced the description goes stale and this goes red.
+	for claim in [
+		[1, "Rust Golem", Rules.Enemy.BEH_ARMOR_GROW, "grows its armour every turn"],
+		[2, "Bloodletter", Rules.Enemy.BEH_LIFESTEAL, "heals off what it deals to you"],
+		[3, "Hexweaver", Rules.Enemy.BEH_CURSE, "curses one of your dice to nothing"],
+		[7, "Berserker", Rules.Enemy.BEH_ENRAGE, "gets angrier the longer it lives"],
+	]:
+		var depth: int = claim[0]
+		var who: Rules.Enemy = r.enemy_for(depth)
+		Check.check(who.title == claim[1], "depth %d is the %s the description names" % [depth, claim[1]])
+		Check.check(who.behavior == claim[2],
+			"and it %s (behaviour %d, want %d)" % [claim[3], who.behavior, claim[2]])
+	var boss := r.enemy_for(FINAL_DEPTH)
+	Check.check(boss.hp == 78, "the boss has the 78 health the description gives it (%d)" % boss.hp)
+	Check.check(boss.armor > 0 and boss.behavior == Rules.Enemy.BEH_ENRAGE,
+		"and it is armoured and enraged, as described")
+
 	# A daily is the same run for everyone on that day, and never lets the boss
 	# out early. Same seed, same enemy order, opener included.
 	var daily_a := new(12345)
