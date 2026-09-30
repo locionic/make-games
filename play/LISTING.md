@@ -140,7 +140,10 @@ there if you disagree.
 Nine fights. One pool of dice. Roll, re-roll once, and take what you can.
 ```
 
-That is 73 characters.
+That is 73 characters of the 80 Play allows. Both text blocks are length-checked
+by `shot.gd --check` (`_check_listing_text`), which prints each count on every
+run and fails on the cap — so rewording either block cannot quietly walk past a
+limit that only shows up when the console rejects an upload.
 
 ## Full description (4000 char limit)
 
