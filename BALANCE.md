@@ -267,7 +267,7 @@ of 3,894 last turns are free or negative). So the third corner closes as well:
 **Do not add this as a card either.** A 13th card is *predicted* to fail
 criterion 1 for the same structural reason item 1 was retired: BALANCE.md records
 that growing the pool lifts random faster than it lifts the best card (the 10th
-card moved random 12.0% → 16.0%), so the 1.48x ratio narrows by construction.
+card moved random 12.0% → 16.0%), so the 1.49x ratio narrows by construction.
 That is a prediction, not a measurement — it is recorded as the reason the item
 is closed rather than the reason it should be retried.
 
@@ -281,41 +281,74 @@ it is a finding, not a card, and closing 0.3 is what it costs.
 ## Baseline — measured, not remembered
 
 `godot --headless --path . --quit -s _balance.gd`, 1000 runs per strategy,
-seeds 7000..7999, so re-running reproduces these exactly.
+seeds 7000..7999, so re-running reproduces these exactly. Re-measured
+2026-09-30 at `dc6622c`, and the stamp is the point — see the note under the
+table.
 
 ```
 strategy        wins%   avg depth   max
-ADD_DIE         24.5%     8.01     9
-PRECISE_STRIKE  19.5%     8.00     9
-SHARPEN         19.0%     7.99     9
-BULWARK         18.5%     8.09     9
-BLESS           17.6%     7.63     9
+ADD_DIE         24.4%     8.04     9
+PRECISE_STRIKE  20.0%     8.00     9
+SHARPEN         18.7%     7.99     9
+BULWARK         18.6%     8.09     9
+BLESS           17.6%     7.64     9
 VIGOR           17.4%     7.63     9
-<random>        16.5%     7.69     9
+<random>        16.4%     7.69     9
 PIERCE          15.3%     7.87     9
-MEND            13.3%     7.46     9
-GAMBLERS_RUSH    9.4%     7.66     9
-FOCUS            8.9%     7.35     9
-REFORGE          8.3%     7.09     9
-BASTION_HOLD     7.7%     7.13     9
+MEND            13.5%     7.47     9
+GAMBLERS_RUSH    9.9%     7.66     9
+FOCUS            9.3%     7.36     9
+REFORGE          8.3%     7.10     9
+BASTION_HOLD     8.2%     7.13     9
+
+  the die-policy rows, which pick no cards and so are not gated -- read these
+  against <random> rather than against each other, same reward pool throughout
+dice:reach     20.7%     8.15     9
+dice:read      18.3%     7.99     9
+dice:swing     13.1%     7.57     9
+dice:chip       0.3%     3.11     9
+dice:nudge     25.4%     8.27     9
+<rand>+gamble  21.9%     7.94     9
+GAMBLERS_RUSH+gamble    16.2%     7.88     9
+<rand>+bank     1.3%     5.93     9
+BASTION_HOLD+bank      1.1%     6.04     9
 ```
+
+**This table went stale, and it went stale *predictably*, which is the finding.**
+Item 7 (pierce on Fang) shipped in `599baac` and recorded its own result in its
+own section: *"<random> 16.5% -> 16.4%, every row within 0.5pp, signs mixed."*
+Nine of the twelve card rows above then sat at their pre-item-7 wins% anyway
+(for a full session), because the item entries and this table are two copies of
+one fact and only one of them was updated. The document's own header calls it
+"measured, not remembered", and it had been remembered.
+
+The numbers themselves are immaterial — 0.5pp moves no verdict, and the three
+gates all still read the same pass/fail they did before (random 16.4% is still
+inside 8–18%, depth 7.69 is still above 7.6, and criterion 1's threshold lands
+on 24.4% either way). The defect is the process one, and the commit stamp above
+is the fix: this table is cheap to re-run and the only thing that made it go
+quiet was that nothing said *when* it was last true. **Re-run the bench and
+restamp this block in the same commit as any change to the rules.** A row here
+that disagrees with an item entry above it is a stale row, not a disagreement.
 
 Three numbers define "better":
 
-- **best/random ratio** — baseline `1.48x` (ADD_DIE over random). How much the
+- **best/random ratio** — baseline `1.49x` (ADD_DIE over random). How much the
   1-of-3 pick matters. This is the thing the game is actually for.
-- **random win%** — baseline `16.5%`. A blind player. Must stay in a band.
+- **random win%** — baseline `16.4%`. A blind player. Must stay in a band.
 - **avg depth** — baseline `7.69`. If a change moves wins but not depth, it
   mostly shifted which fight kills you, not whether you finish.
 
 **The ratio's own baseline moved, and the pool moved it.** This block used to
 read `2.0x` off BULWARK over a random at 12.0%, on nine cards. The pool is
-twelve cards now and `<random>` is 16.5%, so the same arithmetic reads `1.48x`
+twelve cards now and `<random>` is 16.4%, so the same arithmetic reads `1.49x`
 off ADD_DIE. That is not a card getting worse and not a regression — it is the
 effect named in "The ratio does not respond to the card table's composition"
 above, where a bigger table lifts the random draw faster than it lifts the best
 card. The old `2.0x` is not a number this game can produce any more, which is
-what makes criterion 1 below unreadable rather than merely demanding.
+what makes criterion 1 below unreadable rather than merely demanding. Item 7
+then moved it a further 0.01x on its own, with no card added — so the ratio
+tracks the rules, not only the pool, and the stamp is load-bearing.
 
 Depth is the quieter half of the same story: 7.97 -> 7.69 against a 7.6 floor.
 A blind run finishes 0.09 into 0.09 of headroom, and that is the number to
@@ -327,7 +360,7 @@ A change is kept only if **all** of these hold after the full suite passes
 (`godot --headless --path . --quit -s test.gd`, which must print
 `dice.self_test: OK`, `run.self_test: OK`, `9 scripts load`, `reached end`):
 
-1. best/random ratio **strictly widens** vs `1.48x`, and
+1. best/random ratio **strictly widens** vs `1.49x`, and
 2. random win% stays within **8–18%**, and
 3. avg depth does not drop below `7.6`.
 
@@ -346,8 +379,12 @@ A change is kept only if **all** of these hold after the full suite passes
 > reachable to mean anything. It is deliberately *not* re-anchored to "whatever
 > the last run scored" — that would make the gate unfailable by a card that does
 > nothing. This is a change to what passing means, so it is stated here rather
-> than buried: **a card now passes criterion 1 by beating 1.48x, which today
-> means beating 24.4% wins.** The number moves every time the pool does.
+> than buried: **a card now passes criterion 1 by beating 1.49x, which today
+> means beating 24.4% wins.** The number moves every time the pool does, and —
+> measured 2026-09-30 — it also moves when a single face is retuned, so the
+> 1.49x above and the 1.48x in this paragraph are not a contradiction: the
+> re-anchor was made at 16.5% and item 7 then moved random to 16.4%.
+> **24.4% is the live threshold and it is correct under both.**
 
 Otherwise revert and record why. The 8–18% band is the part that matters most:
 a roguelike that a blind player wins 12% of the time is about right, and
@@ -357,7 +394,7 @@ goal; widening it while random sits at 30% is a worse game with sharper
 decisions.
 
 **The band is lopsided, and the lopsidedness is invisible until you subtract.**
-Random currently measures 16.5% at N=1000 and 15.6% at N=4000 — so somewhere
+Random currently measures 16.4% at N=1000 and 15.6% at N=4000 — so somewhere
 around **16%**, against a band of 8–18%. That is 1.5–2.4 points of room *up* and
 roughly 8 points of room *down*. The band reads as symmetric and is not, and the
 asymmetry decides what a change can be for: almost any rebalance that makes the
