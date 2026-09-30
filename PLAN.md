@@ -153,6 +153,49 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
 > Whichever is chosen, rebuild *after* it — the target file is
 > `dicefate.aab`, which is gitignored and therefore unrecoverable once
 > overwritten.
+
+> **The paragraph above overstated what an APK costs, and the overstatement was
+> the whole reason it read as an owner's decision (corrected 2026-09-30).** It
+> says the route is "a second export preset", and a second preset carries its own
+> `keystore/release_password`, so the note implied that fixing this would put
+> the password in that file a second time. **It would not.** `export_presets.cfg`
+> has one Android preset, `export_path="build/android/dicefate.aab"` at line 44
+> and `gradle_build/export_format=1` at line 59. Both are non-secret, and both
+> change in place:
+>
+> ```
+> export_path="build/android/dicefate.apk"
+> gradle_build/export_format=0
+> ```
+>
+> The keystore block at lines 79–81 is **shared, not copied**, because it is one
+> preset being re-pointed rather than a second preset existing. So the ask is two
+> lines, neither of which is a credential.
+>
+> Two things had to be established before writing that down, and both are
+> counter-intuitive enough to be worth keeping. **The enum runs backwards:**
+> index 0 is the APK and index 1 is the AAB, so the preset is correct as written
+> and the artifact is an AAB for the right reason. Read from the editor binary's
+> own option hint, `Export APK,Export AAB`, and confirmed by the shipped file —
+> `export_format=1` is what produced `BundleConfig.pb` and the 114 `base/` +
+> 42 `assetPackInstallTime/` entries. Anyone "fixing" it by assuming 1 means APK
+> would break the Play upload instead. **And the extension is enforced**, from the
+> binary's `Invalid filename! Android APK requires the *.apk extension.` — which
+> is why `export_path` has to move with it rather than after it.
+>
+> The toolchain is not the blocker either, and this is measured rather than
+> assumed: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `gradle`, `apksigner` and
+> `zipalign` are all **absent from this shell**, yet a *release-signed* AAB was
+> produced at 06:54:37 today — `keytool -printcert -jarfile` gives the
+> `CN=Dice Spike` release DN, not `CN=Android Debug`. Signing therefore happened
+> through a toolchain this shell cannot see, so an APK export reaches exactly the
+> same path.
+>
+> **One thing this does cost, and it is why it is two steps rather than one:**
+> Play will only accept an AAB, so `play/LISTING.md`'s upload checklist and this
+> leg cannot both be satisfied by one artifact. Export the APK for the sideload,
+> then put both lines back before 4.3. The keystore is not the reason this needs
+> the owner's hand; the flip-flop between two release artifacts is.
 >
 > The naming is actively backwards — the file called "release" is the older
 > build — so the artifact name is not evidence of anything; the mtime and the

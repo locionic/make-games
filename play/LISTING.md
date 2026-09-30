@@ -207,6 +207,18 @@ you are already playing.
 ## Release checklist
 
 - [ ] Upload the **release**-signed AAB.
+      **Check the preset is back on AAB before building this.** PLAN 4.1's
+      sideload needs an APK, and the Android preset has exactly one
+      `export_path` (line 44) and one `gradle_build/export_format` (line 59), so
+      exporting for a device means pointing both at the `.apk` and setting the
+      format to `0` first. **The format enum runs backwards — `0` is the APK and
+      `1` is the AAB**, so the committed values are already correct for Play and
+      a well-meaning "fix" here would produce an APK that Play rejects. After the
+      hardware pass, put both lines back to the committed values —
+      `export_path="build/android/dicefate.aab"` and `export_format=1` — and
+      check that with `git diff export_presets.cfg`, which is the whole check.
+      Neither line is a credential, and the keystore block at lines 79–81 is
+      shared, not copied. Details and the measurements in PLAN.md 4.1.
       **Both** AABs in `build/android/` are release-signed — checked with
       `keytool -printcert -jarfile`, owner and issuer `CN=Dice Spike,
       OU=Games, O=DiceSpike, L=Unknown, ST=Unknown, C=US`, valid from
