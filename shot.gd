@@ -28,6 +28,7 @@ const SPARE := "res://play/screenshots-spare/%02d-%s.png"
 
 
 func _init() -> void:
+	check_only = "--check" in OS.get_cmdline_user_args()
 	call_deferred("_run")
 
 
@@ -51,23 +52,23 @@ func _run() -> void:
 	# written; press again, it unmutes. The save is staged from scratch here, so
 	# this writes to the scratch file and the real one is restored at the end.
 	var mb: Button = game._mute_btn
-	assert(mb != null, "the game has a mute button")
-	assert(not AudioServer.is_bus_mute(0), "the game starts audible")
+	_check(mb != null, "the game has a mute button")
+	_check(not AudioServer.is_bus_mute(0), "the game starts audible")
 	mb.pressed.emit()
 	await _settle()
-	assert(AudioServer.is_bus_mute(0), "pressing the button mutes the bus")
-	assert(bool(RunState.load_stats()["muted"]), "and the choice is written to the save")
+	_check(AudioServer.is_bus_mute(0), "pressing the button mutes the bus")
+	_check(bool(RunState.load_stats()["muted"]), "and the choice is written to the save")
 	mb.pressed.emit()
 	await _settle()
-	assert(not AudioServer.is_bus_mute(0), "pressing it again unmutes")
-	assert(not bool(RunState.load_stats()["muted"]), "and clears the save")
+	_check(not AudioServer.is_bus_mute(0), "pressing it again unmutes")
+	_check(not bool(RunState.load_stats()["muted"]), "and clears the save")
 
 	# One mute has to cover the bed and the effects. They share the master bus,
 	# which is what set_bus_mute(0) flips -- so if an effect is ever moved to a
 	# bus of its own, the button silently stops silencing it and this is the
 	# only thing that says so.
 	for p in game._sfx:
-		assert(p.bus == "Master", "every effect rides the master bus, so one mute covers all of it")
+		_check(p.bus == "Master", "every effect rides the master bus, so one mute covers all of it")
 
 	# Two runs done, so the picker has every state in it to show.
 	RunState.record_run(3, false)
@@ -81,11 +82,11 @@ func _run() -> void:
 	# to be wiped by the reseed inside show_title(), leaving the tap a no-op.
 	game._on_die_picked("Hex")
 	await _settle()
-	assert(game.pool.size() == 3, "tapping a held die takes it out of the hand")
+	_check(game.pool.size() == 3, "tapping a held die takes it out of the hand")
 	game._on_die_picked("Riposte")  ## owned but benched -- now there is room
 	await _settle()
-	assert(game.pool.size() == 4, "a benched die swaps into the hand the pick freed")
-	assert(game.pool.has("Riposte") and not game.pool.has("Hex"), "and it is the die that moved")
+	_check(game.pool.size() == 4, "a benched die swaps into the hand the pick freed")
+	_check(game.pool.has("Riposte") and not game.pool.has("Hex"), "and it is the die that moved")
 	## No shot here: this is the title screen from #2 with one die swapped, and
 	## Play takes at most 8 per device type. #2 already shows the picker open.
 	game._on_daily()
@@ -94,17 +95,17 @@ func _run() -> void:
 	# The bed has to follow the screen. This is the only place both are true at
 	# once -- title plays menu, fight plays combat -- so it is the only place the
 	# swap can be caught if _music_to ever stops being called from _swap.
-	assert(game.music.playing, "the fight screen has music playing")
-	assert(game.music.stream == game._tracks[game.MUSIC_COMBAT], "and it is the combat bed, not the menu bed")
+	_check(game.music.playing, "the fight screen has music playing")
+	_check(game.music.stream == game._tracks[game.MUSIC_COMBAT], "and it is the combat bed, not the menu bed")
 	# Every effect this run can reach has to actually be on disk, or the name
 	# resolves to null and play_sfx returns silently -- a missing sound file
 	# would otherwise look exactly like a mute.
 	for n in game.SFX.keys():
-		assert(game.SFX[n] != null, "the %s effect is present" % n)
+		_check(game.SFX[n] != null, "the %s effect is present" % n)
 	_grab(2, "fight-daily")  ## the daily badge, before anything is rolled
 
 	panel._on_roll()
-	assert(_last_stream(game) == game.SFX["roll"], "rolling the dice clatters")
+	_check(_last_stream(game) == game.SFX["roll"], "rolling the dice clatters")
 	await _settle()
 	var worst := 0
 	var worst_val := 999
@@ -115,16 +116,16 @@ func _run() -> void:
 			worst_val = val
 			worst = i
 	panel._on_card_pressed(worst)
-	assert(_last_stream(game) == game.SFX["tap"], "queueing a die ticks")
+	_check(_last_stream(game) == game.SFX["tap"], "queueing a die ticks")
 	panel._on_reroll()
-	assert(_last_stream(game) == game.SFX["roll"], "and the re-roll clatters again")
-	assert(_last_vol(game) < 0.0, "quieter than the opening roll, so the two are tellable apart")
+	_check(_last_stream(game) == game.SFX["roll"], "and the re-roll clatters again")
+	_check(_last_vol(game) < 0.0, "quieter than the opening roll, so the two are tellable apart")
 	# PLAN.md 3.1: a nudged die and a re-rolled die must not look alike. Only half
 	# of that is observable -- the tumble is a tween no idle screenshot catches --
 	# so the half that bites is that the gold tick belongs to Focus alone. A
 	# gamble dressed in certainty's colours is the exact failure the split
 	# animation exists to prevent.
-	assert(panel.find_children("Tick", "Label", false, false).is_empty(),
+	_check(panel.find_children("Tick", "Label", false, false).is_empty(),
 		"a re-roll raises no tick -- the gold tick is Focus's alone")
 	await _settle()
 
@@ -137,12 +138,12 @@ func _run() -> void:
 	# landed on its own maximum has nothing to step up to, and `can_focus`
 	# says no. The chance of all three unspent dice being on their best faces
 	# is about one in two hundred, so this failed roughly one run in the
-	# hundred-and-fifty the harness is run -- and because an assert() aborts
-	# `_run()` before `quit()`, a failure did not fail, it hung to the
-	# timeout. That is the worst shape a gate can have: rare, and silent about
-	# being rare. Face 0 is the cheapest face on any die, so a die sitting on
-	# it always has something above it, and the thing under test -- Focus,
-	# through the UI -- is unaffected by which face was chosen.
+	# hundred-and-fifty the harness is run -- and at the time a failure did not
+	# even fail, it hung to the timeout. That is the worst shape a gate can
+	# have: rare, and silent about being rare. Face 0 is the cheapest face on
+	# any die, so a die sitting on it always has something above it, and the
+	# thing under test -- Focus, through the UI -- is unaffected by which face
+	# was chosen.
 	for i in panel.enc.dice.size():
 		if not panel.enc.dice[i].spent and i != panel.enc.banked:
 			panel.enc.dice[i].up = 0
@@ -152,26 +153,26 @@ func _run() -> void:
 		if panel.enc.can_focus(i):
 			target = i
 			break
-	assert(target >= 0, "a die on face 0 always has a better face above it")
+	_check(target >= 0, "a die on face 0 always has a better face above it")
 	var was: int = panel.enc.dice[target].face().worth()
 	var charges: int = panel.enc.focus_left
 	panel._on_focus_pressed()
-	assert(panel.focus_armed, "the Focus button arms a mode")
+	_check(panel.focus_armed, "the Focus button arms a mode")
 	panel._on_focus_pressed()
-	assert(not panel.focus_armed, "and pressing it again cancels it")
-	assert(panel.enc.focus_left == charges, "a cancelled focus costs nothing")
+	_check(not panel.focus_armed, "and pressing it again cancels it")
+	_check(panel.enc.focus_left == charges, "a cancelled focus costs nothing")
 	panel._on_focus_pressed()
 	panel._on_card_pressed(target)
-	assert(not panel.focus_armed, "spending the focus disarms the mode")
-	assert(panel.enc.focus_left == charges - 1, "and uses exactly one charge")
-	assert(panel.enc.dice[target].face().worth() > was, "the focused die is strictly better")
-	assert(panel.enc.dice[target].spent, "and is spent, so it cannot be re-rolled as well")
-	assert(_last_stream(game) == game.SFX["block"], "focus chimes, the set's other rising sound")
+	_check(not panel.focus_armed, "spending the focus disarms the mode")
+	_check(panel.enc.focus_left == charges - 1, "and uses exactly one charge")
+	_check(panel.enc.dice[target].face().worth() > was, "the focused die is strictly better")
+	_check(panel.enc.dice[target].spent, "and is spent, so it cannot be re-rolled as well")
+	_check(_last_stream(game) == game.SFX["block"], "focus chimes, the set's other rising sound")
 	# The other half of 3.1. The tick is created synchronously and floats for
 	# 0.7s, so it is still findable on the very next line -- and it is named
 	# "Tick" rather than "Float" so this cannot be satisfied by a damage number,
 	# which is what gives the re-roll assertion above its meaning.
-	assert(panel.find_children("Tick", "Label", false, false).size() == 1,
+	_check(panel.find_children("Tick", "Label", false, false).size() == 1,
 		"and a gold tick rises off the card Focus just spent")
 
 	# Bank, through the same three doors. The rule the UI has to protect is the
@@ -183,25 +184,25 @@ func _run() -> void:
 		if i != target and not panel.enc.dice[i].spent:
 			hold = i
 			break
-	assert(hold >= 0, "the roll left at least one unspent die to hold")
+	_check(hold >= 0, "the roll left at least one unspent die to hold")
 	# A live charge, or the mutual exclusion is half untestable: the focus block
 	# above spent the fight's only one, and Focus rightly refuses to arm without.
 	panel.enc.focus_left = 1
 	panel._on_focus_pressed()
-	assert(panel.focus_armed, "with a charge in hand, Focus arms")
+	_check(panel.focus_armed, "with a charge in hand, Focus arms")
 	panel._on_bank_pressed()
-	assert(panel.bank_armed and not panel.focus_armed,
+	_check(panel.bank_armed and not panel.focus_armed,
 		"arming Bank closes Focus -- one armed mode at a time")
 	panel._on_focus_pressed()
-	assert(panel.focus_armed and not panel.bank_armed, "and arming Focus closes Bank back")
+	_check(panel.focus_armed and not panel.bank_armed, "and arming Focus closes Bank back")
 	panel._on_bank_pressed()
 	panel._on_card_pressed(hold)
-	assert(not panel.bank_armed, "holding a die disarms the mode, same as spending does")
-	assert(panel.enc.banked == hold, "the die is held")
-	assert(panel.effect_labels[hold].text == "HELD", "and the card says so")
+	_check(not panel.bank_armed, "holding a die disarms the mode, same as spending does")
+	_check(panel.enc.banked == hold, "the die is held")
+	_check(panel.effect_labels[hold].text == "HELD", "and the card says so")
 	panel._on_bank_pressed()
 	panel._on_card_pressed(hold)
-	assert(panel.enc.banked == -1, "holding it again releases it, and costs nothing")
+	_check(panel.enc.banked == -1, "holding it again releases it, and costs nothing")
 	panel._on_bank_pressed()
 	panel._on_card_pressed(hold)
 	var held_worth: int = panel.enc.dice[hold].face().worth()
@@ -233,7 +234,7 @@ func _run() -> void:
 				pin_gain = gain
 				pin = i
 				panel.enc.dice[i].up = j
-	assert(pin >= 0, "the roll left a die that can actually hurt the enemy")
+	_check(pin >= 0, "the roll left a die that can actually hurt the enemy")
 	# Block is spent by the counter-attack, so its high-water mark is gone by
 	# the time the turn returns. Read it off the faces the resolve is *about* to
 	# see -- after the pin, and without the held die, which pays on the next
@@ -254,24 +255,24 @@ func _run() -> void:
 	# This assert is what found a curse enemy dragging a held die to its worst
 	# face behind the player's back -- twice in six runs, both times the card
 	# still reading HELD. The rule now bans the held die; the fixture stays.
-	assert(panel.enc.banked == hold, "the hold survived the turn")
-	assert(panel.enc.dice[hold].face().worth() == held_worth, "and the die kept its face")
-	assert(panel.effect_labels[hold].text == "HELD", "still marked as held")
+	_check(panel.enc.banked == hold, "the hold survived the turn")
+	_check(panel.enc.dice[hold].face().worth() == held_worth, "and the die kept its face")
+	_check(panel.effect_labels[hold].text == "HELD", "still marked as held")
 	_grab(3, "fight-roll-reroll")
 
 	# The turn's own sounds, each tied to the same delta that moved the bar. The
 	# damage face above makes the strike unconditional; hurt is not, and a turn
 	# that rolled all block must stay silent rather than thud.
-	assert(panel.enc.enemy.hp < foe_hp, "the pinned face struck the Grunt")
-	assert(_sfx_fired(game, "strike"), "hitting the enemy strikes")
-	assert(_sfx_fired(game, "block") == had_block, "block chimes only when the roll gained some")
+	_check(panel.enc.enemy.hp < foe_hp, "the pinned face struck the Grunt")
+	_check(_sfx_fired(game, "strike"), "hitting the enemy strikes")
+	_check(_sfx_fired(game, "block") == had_block, "block chimes only when the roll gained some")
 	if my_hp - panel.enc.hp > 0:
-		assert(_sfx_fired(game, "hurt"), "and taking it back hurts")
+		_check(_sfx_fired(game, "hurt"), "and taking it back hurts")
 	# An unresolvable name must not advance the pool: a typo in a sound name
 	# would otherwise steal the next effect's player and cut it off.
 	var turn_before: int = game._sfx_next
 	game.play_sfx("no-such-sound")
-	assert(game._sfx_next == turn_before, "an unknown name is a no-op, not a crash")
+	_check(game._sfx_next == turn_before, "an unknown name is a no-op, not a crash")
 
 	# A run deep enough to hold six dice, so the six-card row gets looked at.
 	panel.enc.over = false
@@ -296,14 +297,14 @@ func _run() -> void:
 	game.show_reward(offers)
 	await _settle()
 	var cards: Array = game.screen.find_children("*", "Button", true, false)
-	assert(cards.size() == 3, "the reward screen offers exactly three cards")
+	_check(cards.size() == 3, "the reward screen offers exactly three cards")
 	for c in cards:
 		var box: Rect2 = c.get_global_rect()
 		for l in c.find_children("*", "Label", true, false):
 			var lr: Rect2 = l.get_global_rect()
-			assert(lr.position.x >= box.position.x and lr.end.x <= box.end.x,
+			_check(lr.position.x >= box.position.x and lr.end.x <= box.end.x,
 				"'%s' fits inside its card horizontally" % l.text)
-			assert(lr.position.y >= box.position.y and lr.end.y <= box.end.y,
+			_check(lr.position.y >= box.position.y and lr.end.y <= box.end.y,
 				"'%s' fits inside its card vertically" % l.text)
 	_grab(5, "reward-pick-one")
 
@@ -317,7 +318,7 @@ func _run() -> void:
 	# The share button's whole job is the confirmation, so catch it lit up.
 	# `owned` is off: the button's owner is the row it sits in, not `screen`.
 	var share_btn = game.screen.find_child("Share", true, false)
-	assert(share_btn != null, "the end screen has a share button to press")
+	_check(share_btn != null, "the end screen has a share button to press")
 	share_btn.pressed.emit()
 	await _settle()
 	_grab(7, "share-result")
@@ -337,17 +338,17 @@ func _run() -> void:
 	# the player has to spend. Sharing the muted grey would make the one thing
 	# worth acting on look like the two things that are not. The tag is
 	# capitalize()d on the way out, so the words are matched capitalised too.
-	assert(plated.enemy_tag.text.find("Exposed") == -1, "no Exposed tag before it is exposed")
-	assert(plated.enemy_tag.get_theme_color("font_color") == T.MUTED,
+	_check(plated.enemy_tag.text.find("Exposed") == -1, "no Exposed tag before it is exposed")
+	_check(plated.enemy_tag.get_theme_color("font_color") == T.MUTED,
 		"armour is stated in the muted colour, like every other permanent fact")
 	plated.enc.enemy.exposed = 1
 	plated._refresh()
 	await _settle()
-	assert(plated.enemy_tag.text.find("Exposed") != -1,
+	_check(plated.enemy_tag.text.find("Exposed") != -1,
 		"exposing the enemy puts the tag on screen")
-	assert(plated.enemy_tag.text.find("Armour %d" % Rules.Enemy.ARMOR_GROW_CAP) != -1,
+	_check(plated.enemy_tag.text.find("Armour %d" % Rules.Enemy.ARMOR_GROW_CAP) != -1,
 		"and it does not replace the armour reading")
-	assert(plated.enemy_tag.get_theme_color("font_color") == T.GOLD,
+	_check(plated.enemy_tag.get_theme_color("font_color") == T.GOLD,
 		"in gold, the colour everything else uses for live-and-act-on-it")
 	_grab(8, "fight-armoured")
 
@@ -419,14 +420,14 @@ func _run() -> void:
 		seen += l.text + " / "
 		# Present in the tree is not the same as on the card. A float that has
 		# already faded is found by every query above and photographs as nothing.
-		assert(l.modulate.a > 0.5, "the number is still opaque when the frame is taken")
+		_check(l.modulate.a > 0.5, "the number is still opaque when the frame is taken")
 	# The card has to agree with the rules layer, so every expected number is read
 	# off the encounter after the resolve rather than written in here. A literal
 	# would be a second copy of the rules to keep in step, and the first version
 	# of this asserted "4 deflected" against a fixture that in fact produced 5.
-	assert(seen.find("-%d" % (hp_before - plated.enc.enemy.hp)) != -1,
+	_check(seen.find("-%d" % (hp_before - plated.enc.enemy.hp)) != -1,
 		"the damage that got through is on the card (saw: %s)" % seen)
-	assert(seen.find("%d deflected" % plated.enc.last_deflected) != -1,
+	_check(seen.find("%d deflected" % plated.enc.last_deflected) != -1,
 		"and so is the damage the plate ate (saw: %s, last_deflected=%d)"
 		% [seen, plated.enc.last_deflected])
 	# The block float is deliberately not asserted on. The enemy's turn runs inside
@@ -449,7 +450,7 @@ func _run() -> void:
 		for a in anchors:
 			if (f as Control).global_position.distance_to(a) < 80.0:
 				near = true
-		assert(near, "the float lands on the control it describes, not the panel corner")
+		_check(near, "the float lands on the control it describes, not the panel corner")
 	_grab(9, "fight-impact", SPARE)
 
 	# PLAN.md 4.1, the part of it that runs without a handset. "Touch
@@ -479,7 +480,9 @@ func _run() -> void:
 	if had_save:
 		DirAccess.copy_absolute(BACKUP, SAVE)
 		DirAccess.remove_absolute(BACKUP)
-	quit()
+	# Non-zero on a failed check, so `--check` can be run in a loop instead of
+	# being read. Verified both ways: 48 exits 0, 96 exits 1.
+	quit(1 if _fails > 0 else 0)
 
 
 func _settle() -> void:
@@ -526,6 +529,27 @@ func _sfx_fired(game, name: String) -> bool:
 ## 540x960 canvas maps 1:1 to it, so a raw pixel comparison is the right one.
 const TOUCH_MIN := 48.0
 
+## How many checks this run has failed.
+var _fails := 0
+
+
+## assert(), except it is a gate and not a debugger breakpoint.
+##
+## `assert()` is the wrong primitive twice over here, and both halves were found
+## by running the thing rather than reading it. It aborts `_run()` where it
+## stands, so the `quit()` below never runs and a failure hung to the timeout
+## instead of reporting. And on this engine an assert that does abort still
+## exits 0 -- measured, not assumed: with the minimum raised to 96 the run
+## printed "Assertion failed: 'Roll' is a 96x54 target, over the 96 minimum"
+## for both hands and `$?` was 0. A gate whose result nothing can read is a
+## gate nobody runs, which is the whole reason `--check` exists.
+func _check(cond: bool, msg: String) -> void:
+	if cond:
+		return
+	_fails += 1
+	push_error("FAILED: " + msg)
+
+
 
 ## Every tappable thing on the fight screen, read off the laid-out rects.
 ##
@@ -552,15 +576,15 @@ func _ergonomics(panel, label: String) -> void:
 	for b in buttons:
 		var c := b as Control
 		smallest = smallest.min(c.size)
-		assert(c.size.x >= TOUCH_MIN and c.size.y >= TOUCH_MIN,
+		_check(c.size.x >= TOUCH_MIN and c.size.y >= TOUCH_MIN,
 			"%s: '%s' is a %.0fx%.0f target, over the %.0f minimum"
 			% [label, b.text, c.size.x, c.size.y, TOUCH_MIN])
 		var r := c.get_global_rect()
-		assert(r.position.x >= 0.0 and r.position.y >= 0.0
+		_check(r.position.x >= 0.0 and r.position.y >= 0.0
 			and r.end.x <= vp.x and r.end.y <= vp.y,
 			"%s: '%s' fits the %.0fx%.0f screen (at %s)"
 			% [label, b.text, vp.x, vp.y, r])
-		assert(c.get_combined_minimum_size().x <= c.size.x,
+		_check(c.get_combined_minimum_size().x <= c.size.x,
 			"%s: '%s' label fits its %.0fpx button (wants %.0f)"
 			% [label, b.text, c.size.x, c.get_combined_minimum_size().x])
 
@@ -572,7 +596,7 @@ func _ergonomics(panel, label: String) -> void:
 			for j in range(i + 1, group.size()):
 				var a: Rect2 = (group[i] as Control).get_global_rect()
 				var b2: Rect2 = (group[j] as Control).get_global_rect()
-				assert(not a.intersects(b2),
+				_check(not a.intersects(b2),
 					"%s: target %d (%s) does not overlap %d (%s)"
 					% [label, i, (group[i] as Control).get_parent().get_name(),
 						j, (group[j] as Control).get_parent().get_name()])
@@ -582,7 +606,7 @@ func _ergonomics(panel, label: String) -> void:
 	for c in panel.cards:
 		var card := c as Control
 		smallest = smallest.min(card.size)
-		assert(card.size.x >= TOUCH_MIN and card.size.y >= TOUCH_MIN,
+		_check(card.size.x >= TOUCH_MIN and card.size.y >= TOUCH_MIN,
 			"%s: card %d is a %.0fx%.0f target"
 			% [label, card.get_index(), card.size.x, card.size.y])
 
@@ -594,7 +618,22 @@ func _ergonomics(panel, label: String) -> void:
 			vp.x, vp.y])
 
 
+## Set by `--check`. The ergonomics gate lives here because this is the only
+## thing in the repo that lays the fight out and reads back real rects -- but
+## that made the gate unusable on its own: every run of it rewrote
+## play/screenshots/, so verifying PLAN.md 4.1's touch targets meant re-shooting
+## the whole Play listing, and on a working tree with someone else's uncommitted
+## screenshots in it, re-shooting means overwriting them. `--check` walks the
+## identical flow, runs every assertion, and writes nothing. A layout gate that
+## has to publish store art to be allowed to run is a gate nobody runs.
+var check_only := false
+
+
 func _grab(n: int, name: String, dir: String = SHOTS) -> void:
+	# Before the read-back, not after: the only thing below this line that
+	# matters is producing a file, and producing files is the part being skipped.
+	if check_only:
+		return
 	var path := dir % [n, name]
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var img := root.get_texture().get_image()
