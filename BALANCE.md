@@ -202,6 +202,34 @@ line plus 12 lines of comment on `Face.pierce` — verified by diff, not
 assumed, because a measurement taken against a drifted copy is the one
 kind of number here that no sample size can rescue.
 
+> **The probe cannot be rebuilt from the recipe above, and the three reasons are
+> all verifiable without running it (corrected 2026-09-30).** The numbers are
+> not in question — I cannot re-run the probe and am not claiming they are wrong
+> — but nothing in this file says which patch produced them, and that is the one
+> thing this file is supposed to guarantee.
+>
+> **`dice.gd:602` is the wrong line.** It is a comment — *"card pay for itself
+> the turn it was taken"* — inside `resolve_faces`, about Exposed being applied
+> after the damage. The clamp is at **`dice.gd:610`**.
+>
+> **"The single line" is not single.** `enemy.hp = 0` appears twice, each inside
+> its own `if enemy.hp <= 0:`: **`dice.gd:610`**, the player's damage path, and
+> **`dice.gd:640`**, the thorns path on the enemy's turn. The second is
+> reachable — `thorns > 0` is what BULWARK grants (`run.gd:274`, `thorns += 4`)
+> and BULWARK is in the pool — so deleting only the first leaves a clamp in
+> place and the patch is under-specified rather than minimal.
+>
+> **"That is the whole patch" contradicts the next sentence**, which says
+> `dice.gd` differs from HEAD by that one line *plus 12 lines of comment on
+> `Face.pierce`*. Both cannot be the whole patch. Comments do not change
+> behaviour, so this one is probably harmless, but the file should not assert
+> two different patch scopes in four lines and then call the measurement
+> verified-by-diff.
+>
+> The fix is a sentence, not a re-measurement: say which clamp, say both if both
+> were lifted, and drop "the whole patch" in favour of the actual delta. Until
+> then treat the `18.6%` and the `0` as a result this file cannot reproduce.
+
 Then the reason none of it can be banked, which is definitional rather than
 statistical and is why no sample size would have found it: **a resolve can only
 overshoot by driving HP to or past zero, and a resolve that does that is the
@@ -634,13 +662,13 @@ Strike through and note the verdict when tried.
 > card, not about Focus.
 >
 > **The `dice:nudge` half of that does not carry its weight uncaveated, and I
-> left it that way.** `nudge` is one of the policies I wrote (1116, and restated
-> later), and it always spends — see the correction under **CUT** below, which
-> carries the measured reason. The conclusion survives anyway, because it rests
-> on the controlled comparison rather than on the policy's score: the card lost
-> to its own control by 7.7 standard errors on depth, under a hand that was the
-> same on both sides. **Drop the second half of the sentence and the argument
-> still says what it needs to.**
+> left it that way.** `nudge` is a policy I wrote — it is named in the
+> honest-caveats list under the three-cards section — and it always spends, so
+> see the correction under **CUT** below for the measured reason. The conclusion
+> survives anyway, because it rests on the controlled comparison rather than on
+> the policy's score: the card lost to its own control by 7.7 standard errors on
+> depth, under a hand that was the same on both sides. **Drop the second half of
+> the sentence and the argument still says what it needs to.**
 >
 > **What I should have done before building anything** was `git log -S
 > "DISCIPLINED_MIND"`, which answers "has this been tried" in one command. The
@@ -1079,9 +1107,10 @@ and bounded, so the card taxes the plentiful currency to buy the scarce one.
 > And the noise claim is narrower than I first wrote it, so it belongs to the
 > *other* number. The `7.8 points` in the table is the first attempt's **win-rate**
 > gap and BALANCE.md records no standard error against it; the re-measurement's
-> backed figure is **7.7 standard errors on average depth** (7.69 → 7.21, line
-> 586). That is the one to lean on. The two gaps point the same way, but only one
-> of them has a distribution behind it, and the sentence should not pretend
+> backed figure is **7.7 standard errors on average depth** (7.69 → 7.21, from
+> the criterion-3 table under the DISCIPLINED_MIND entry in the cards list).
+> That is the one to lean on. The two gaps point the same way, but only one of
+> them has a distribution behind it, and the sentence should not pretend
 > otherwise.
 >
 > "The mechanic itself is fine" *is* that policy, restated — and it is weaker than
@@ -1095,8 +1124,9 @@ and bounded, so the card taxes the plentiful currency to buy the scarce one.
 > `atk 9` and `BEH_ENRAGE`, which is `+1` a turn (`dice.gd:154`), so its fourth
 > enemy turn telegraphs 12 — and the bot has no way to represent the choice.
 > `dice:nudge` is therefore a **lower** bound on what Focus is worth, and using it
-> as an upper bound is the same move `read` and `reach` get a caveat for at lines
-> 891 and 960. The generic version is already stated at 1116; this is the
+> as an upper bound is the same move `read` and `reach` get a caveat for at their
+> own point of use in the Ironhide section. The generic version is already
+> stated in the honest-caveats list under the three-cards section; this is the
 > point-of-use one that was missing.
 >
 > The asymmetry above is also sharper than "effectively unbounded" states, and
