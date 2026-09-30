@@ -650,6 +650,7 @@ func _run() -> void:
 	await _settle()
 	_ergonomics(game, "six-dice hand")
 
+	_check_listing_text()
 	_check_store_art()
 
 	if had_save:
@@ -959,6 +960,46 @@ func _collect(n: Node, out: Array[Button]) -> void:
 		out.append(n)
 	for child in n.get_children():
 		_collect(child, out)
+
+
+## PLAN.md 4.3's first bullet is "Finalize store metadata in play/LISTING.md",
+## and only the second needs the account. The two text blocks Play takes are
+## character-limited -- 80 and 4000 -- and LISTING.md states both numbers in
+## prose ("That is 73 characters"), measured by hand. Editing a description is
+## the most routine thing anyone does to this file and the most likely way to
+## walk past a limit that only fails at upload, with the console rejecting a
+## build it has already accepted.
+##
+## The count is reported rather than only asserted, for the reason the shake
+## check gives: a threshold that shows itself only on failure cannot be told
+## apart from one that is always true, and "That is 73 characters" in the prose
+## is going to go stale the moment somebody rewords the opening line.
+func _check_listing_text() -> void:
+	var path := "res://play/LISTING.md"
+	_check(FileAccess.file_exists(path), "the listing copy is in the repo")
+	if not FileAccess.file_exists(path):
+		return
+	var fence := RegEx.new()
+	# `(?s)` so `.` spans newlines; the full description is 61 lines of prose and
+	# without it the pattern matches nothing and every check below is skipped --
+	# which is the shape of a gate that cannot fail, and the reason the block
+	# count below is asserted before the blocks are indexed.
+	fence.compile("(?s)```\\n(.*?)```")
+	var blocks: Array = []
+	for m in fence.search_all(FileAccess.get_file_as_string(path)):
+		blocks.append(str(m.get_string(1)).strip_edges())
+	_check(blocks.size() == 2,
+		"LISTING.md holds exactly the two text blocks Play takes (found %d)" % blocks.size())
+	if blocks.size() != 2:
+		return
+	for pair in [[0, 80, "short description"], [1, 4000, "full description"]]:
+		var i: int = pair[0]
+		var cap: int = pair[1]
+		var what: String = pair[2]
+		var n: int = blocks[i].length()
+		_check(n > 0, "the %s is not empty" % what)
+		_check(n <= cap, "the %s is inside Play's %d character limit (%d)" % [what, cap, n])
+		print("  listing: %s is %d characters, cap %d, %d to spare" % [what, n, cap, cap - n])
 
 
 ## The Assets table in `play/LISTING.md` states a spec and a measured value for
