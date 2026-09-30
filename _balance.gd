@@ -303,6 +303,64 @@ func _go() -> void:
 	# measure something decided not to ship is a change nobody asked for. The
 	# control arm reproduced the random-draw row to the decimal, so the pairs
 	# are tight.
+	#
+	# --- PLAN.md 0.3, the other half: "an enemy that counters on rolls > 10" --
+	#
+	# The last bullet of the section, and it was built and cut the same way
+	# SUNDER was, for a reason that is a property of the dice rather than of the
+	# rule. Nothing in the roster punishes a big single hit: ARMOR_GROW and
+	# ENRAGE punish long fights, LIFESTEAL is a damage race, CURSE punishes
+	# relying on one die, and BRACE punishes chip. So flat damage has no
+	# counter-play anywhere in the game, and SHARPEN -- +1 to *every* damage
+	# face, safe against all nine enemies -- measures 19.0%, second best.
+	#
+	# BEH_GUARD was written as the exact mirror of BRACE: +1 armour per face at
+	# or above REACT_HIGH, sharing BRACE's cap and its off-diagonal inertness
+	# (8 checks in a sandbox, each behaviour provably blind to the other's
+	# trigger). Measured as a conversion of Ironhide 30/2/7 rather than a new
+	# roster slot, so the depth ladder and the stats are untouched and one enum
+	# field is the only difference. Predicted before running: `reach` chases
+	# EXPOSE_AT and must fall, `swing` never shows a big face and must be flat,
+	# SHARPEN must be the least hurt damage card. All three were wrong --
+	# `reach` +1.6, `swing` +1.5, and SHARPEN +3.0, the single most helped row
+	# in the table. Every row rose, `<random>` 16.5% -> 17.8%.
+	#
+	# The reason is the trigger rate, and it is the whole finding. Over 4000
+	# rolls and 10660 damaging hits:
+	#
+	#   >=10 : 12.4% of hits    (2 of 24 faces in the pool can ever reach it)
+	#   >=7  : 24.8%           (4 of 24)
+	#   >=3  : 68.1%           (11 of 24)
+	#   BRACE's own <6 fires on 69.4%
+	#
+	# The pool is bottom-heavy: Blade's best face is 9 and cannot clear 10 on
+	# any roll, and Ward and Hex have no damaging face at all. Only Sunder
+	# reaches the threshold, on 2 of its 6 faces. So GUARD fires 5.6x less
+	# often than the BRACE it replaced, and converting Ironhide *deletes*
+	# pressure instead of adding it -- which is the entire reason every row
+	# rose. Sweeping the threshold confirms it is structural and not a tuning
+	# miss: 10 -> 17.8%, 7 -> 16.9%, 5 -> 16.0%, 3 -> 15.8% against a 16.5%
+	# control. The only threshold at which the rule bites is one that punishes
+	# most hits, and that is not "counters on rolls > 10", it is BRACE again.
+	#
+	# So the bullet is unbuildable as written rather than badly balanced: no
+	# threshold makes "punishes the big hit" *selective* in a pool whose faces
+	# cluster low. A version worth keeping would have to read something other
+	# than a single face -- a per-resolve total, or a per-die one that Sunder
+	# can clear and Blade cannot -- which is a different mechanic, not a
+	# threshold, and it would not be the mirror the plan asked for. Not
+	# started here.
+	#
+	# Measured in /tmp/guardbench, a fresh copy of dice.gd/run.gd/_check.gd with
+	# BEH_GUARD and react_high added to the rules. Nothing was shipped: the
+	# repo's dice.gd is byte-identical to the commit this was written against,
+	# which `git show HEAD:dice.gd | diff - dice.gd` is the check for. The
+	# first version of that sandbox's sanity check found a face by damage value
+	# and returned -1 when the die had none, and GDScript's negative indexing
+	# wrapped it to that die's *last* face -- so a Sunder that was supposed to
+	# be small was silently rolled as 14 and the check passed anyway. It is
+	# recorded here because a green sanity block is worth exactly nothing
+	# unless it can fail, and this one could not.
 
 	_axis_report()
 
