@@ -62,6 +62,44 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
 - Maintain the rule established in `BALANCE.md` (no dead-weight / strictly dominated cards).
 - Every card offered must support a distinct axis (Variance/Gamble vs. Focus/Certainty vs. Banking/Stalling).
 
+> **The rule was written down and two cards were breaking it at runtime anyway
+> (fixed 2026-09-30, `3b0d28a` and the MEND clamp after it).** "No strictly
+> dominated card" reads like a property of the *table*, so it was checked as
+> one — every entry's description against its arm in `apply_upgrade` — and the
+> table is fine. The violation was in the offer, where a card is not dominated
+> by its own description but by the *run state at the moment it is dealt*. Two
+> cards were:
+>
+> - **`ADD_DIE` with every bonus die already in hand.** The pool is 4 of
+>   `MAX_DICE` 6, so the size clamp cannot catch it and the card had not been
+>   taken, so the once-per-run clamp cannot either. Measured at **14 appearances
+>   in 60 draws of three.** Reachable from exactly what the store description
+>   advertises: three finished runs, hand chosen.
+> - **`MEND` at full health.** Heal 14 is worth 0, the card is consumed anyway,
+>   and unlike `ADD_DIE` it carries no clamp at all. Rewards are drawn straight
+>   after `absorb`, so a perfectly blocked fight deals it to a full-health
+>   player: **24.4% of all reward rolls, and 169 dead picks in 717 deals.** The
+>   `_weak_pick` bot reads the biggest headline number, so it took "Heal 14"
+>   first and spent a quarter of its picks on nothing — `test.gd`'s 40-run bot
+>   went **2/40 → 8/40** when the clamp landed.
+>
+> The two need different kinds of clamp and that is the useful part. `ADD_DIE`
+> is *permanently* inert once you hold them all, so it belongs on the card.
+> `MEND` is *transiently* inert — you are full now and hurt in two turns — so
+> clamping the card would delete the only heal from the rest of the run.
+> Clamping the offer is right for both, and the difference is what tells them
+> apart.
+>
+> `SHARPEN` and `BLESS` were checked for the same shape and cannot have it.
+> Measured face-by-face across all seven dice, the roster splits five/two:
+> Blade, Sunder, Hex, Spark and Fang carry only damage faces, and only Ward
+> (6 block) and Riposte (5) carry only block. A hand is always four, and there
+> are only two all-block dice, so a hand always holds something of both kinds
+> and neither card can land on an empty pool. That is a property of the roster
+> rather than of the cards, which makes it the thing to re-measure if a die is
+> ever added — an eighth all-block die would leave a four-of-Ward hand, and
+> SHARPEN would become a fourth card with nothing to give.
+
 ---
 
 ## Phase 2: Empirical Balance Verification
@@ -75,7 +113,7 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
   4. *Random Player* (plays blindly / baseline).
 - Measure: Does the gap between tactical strategies and the random player widen significantly beyond the baseline 2.0x?
 
-> **Answered 2026-09-30: no. The best policy is 1.55x, and it was never
+> **Answered 2026-09-30: no. The best policy is 1.46x, and it was never
 > measured before.** There is no `2.0x`, no skill-to-random ratio and no
 > baseline anywhere in the repo — `grep -rn "2\.0x\|skill.to.random" *.gd`
 > returns only `512x512` — so the bullet above recorded a target that nothing
@@ -85,24 +123,35 @@ Replace flat "+1 to face" upgrades with upgrades that interact with Phase 0 deci
 >
 > | policy | wins% | vs control | avg depth | vs control |
 > |---|---|---|---|---|
-> | `dice:nudge` (Tactical Nudger) | 25.4 | **1.55x** | 8.27 | 1.08x |
-> | `dice:reach` | 20.7 | 1.26x | 8.15 | 1.06x |
-> | `dice:read` | 18.3 | 1.12x | 7.99 | 1.04x |
-> | `<random>` (Random Player) | 16.4 | — | 7.69 | — |
-> | `dice:swing` (Greedy Gambler) | 13.1 | 0.80x | 7.57 | 0.98x |
-> | `dice:chip` | 0.3 | 0.02x | 3.11 | 0.40x |
+> | `dice:nudge` (Tactical Nudger) | 26.4 | **1.46x** | 8.30 | 1.05x |
+> | `dice:reach` | 21.0 | 1.16x | 8.19 | 1.04x |
+> | `dice:read` | 18.5 | 1.02x | 8.16 | 1.04x |
+> | `<random>` (Random Player) | 18.1 | — | 7.88 | — |
+> | `dice:swing` (Greedy Gambler) | 14.8 | 0.82x | 7.71 | 0.98x |
+> | `dice:chip` | 0.3 | 0.02x | 3.27 | 0.42x |
 >
-> Two things worth reading off it. **The Nudger is the best bot in the game by
-> a clear margin** — nothing else reaches 21% — which is the strongest evidence
-> anywhere in this repo that Phase 0's Focus charge is a real decision rather
-> than a second button, since the only policy that presses it is the one that
-> wins. And **the depth ratio is 1.08x, not 1.55x**: tactics move the boss
+> **Re-measured after the two card clamps below, and the direction is worth
+> more than the number.** Every row rose — the Nudger 25.4 → 26.4, the control
+> 16.4 → 18.1 — and the ratio *fell*, 1.55x → 1.46x, because the control gained
+> more than the best bot did. A fix that removed a dead pick from a quarter of
+> all reward rolls helped whoever was wasting the most picks, and that turned
+> out to be the bot playing at random. `dice:read` has collapsed to parity with
+> the control (18.5 vs 18.1, from 1.12x) and `dice:reach` is the only other
+> policy still clearly ahead of it. Do not read the drop as the design getting
+> worse: the 12 single-card rows still span 0.98 avg depth against a 0.5 floor,
+> and the gate `_balance.gd` actually enforces has not moved.
+>
+> Two things worth reading off the table. **The Nudger is the best bot in the
+> game by a clear margin** — nothing else reaches 22% — which is the strongest
+> evidence anywhere in this repo that Phase 0's Focus charge is a real decision
+> rather than a second button, since the only policy that presses it is the one
+> that wins. And **the depth ratio is 1.05x, not 1.46x**: tactics move the boss
 > fight, not how far a run gets, which is the same upgrade/depth bind the
 > probe's own notes warn about.
 >
 > This is deliberately **not** a gate. A hard check at 2.0x would be red on
 > every run, and `_check.gd`'s own argument is that a permanently red check is
-> a check nobody reads. Whether 1.55x is the skill ceiling this design wants is
+> a check nobody reads. Whether 1.46x is the skill ceiling this design wants is
 > the owner's call — the alternative readings (retune the policies upward, or
 > accept that a 9-fight roguelike with one correct policy has a narrow skill
 > band) are design decisions, not something to quietly re-tune until a number
