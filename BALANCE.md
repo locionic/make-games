@@ -565,10 +565,9 @@ Strike through and note the verdict when tried.
 4. **~~[x] Add DISCIPLINED_MIND, PLAN 1.1's fourth named card.~~ DROP
    2026-09-30, on criterion 3, and it settles what PLAN 1.2's second axis is
    worth.** 1.1 named four cards; three shipped (`GAMBLERS_RUSH`,
-   `BASTION_HOLD`, `PRECISE_STRIKE`) and this was the one still missing, so it
-   was the last unbuilt item in Phase 0/1. The spec is *"gain +1 Focus charge
-   every turn, but -1 re-roll"* — the certainty half of the trade the re-roll is
-   the gamble half of.
+   `BASTION_HOLD`, `PRECISE_STRIKE`) and this one is not in the pool, so it is
+   the fourth. The spec is *"gain +1 Focus charge every turn, but -1 re-roll"*
+   — the certainty half of the trade the re-roll is the gamble half of.
    Built in full before measuring: the card, `Encounter.per_turn_focus`, the
    per-turn refill in `roll_all`, an offer filter so the cost is always real (at
    zero re-rolls it leaves the table rather than becoming a free Focus), and 13
@@ -607,6 +606,41 @@ Strike through and note the verdict when tried.
    **Do not retry** without a different gate. **PLAN 1.1 is now closed** — three
    cards shipped, this one measured and cut, and 1.2's second axis has no viable
    card on it rather than a missing one.
+
+> **This entry was filed as first work and it was the second attempt (corrected
+> 2026-09-30, the same day).** `DISCIPLINED_MIND` was already built, measured,
+> repriced once and CUT — see "The die policies" below, which has been in this
+> file since the initial commit `088a3f1`. This entry's first draft said the card
+> "was the last unbuilt item in Phase 0/1" and that it was "built in full before
+> measuring", which reads as though no one had touched it. Both are wrong, and
+> the error is worth more than the edit, because **the first attempt's own
+> analysis names the exact defect this one was designed to remove**:
+>
+> | | first attempt (`088a3f1`) | this one |
+> |---|---|---|
+> | spec | **+2 Focus per FIGHT** for −1 re-roll | **+1 Focus per TURN** for −1 re-roll |
+> | result | 7.8 points below its own control | `4.9%`, second-worst card in a 13-card table |
+> | diagnosis | "re-rolls are per-turn and effectively unbounded, Focus is per-fight and bounded, so the card taxes the plentiful currency to buy the scarce one" — *"no price fixes it"* | same cause, still fatal |
+>
+> So the two are **not** a duplicate, and the diff between them is the reason the
+> second one was worth running: the first was cut for **denomination**, and
+> per-turn Focus removes that objection outright rather than repricing around it.
+> And it still failed. That is what sharpens the earlier claim: **"no price fixes
+> it" was too narrow.** A price was never the only variable — the denomination
+> was, and taking it away changes nothing either. The supportable statement is
+> the stronger one: **nothing this card can be given rescues it, because the
+> re-roll is worth more than Focus at any rate and any budget.** The `dice:nudge`
+> row is what says the mechanic itself is fine, so this is a statement about the
+> card, not about Focus.
+>
+> **What I should have done before building anything** was `git log -S
+> "DISCIPLINED_MIND"`, which answers "has this been tried" in one command. The
+> card's name is in this file, its epitaph is in this file, and the epitaph is
+> four hundred lines from where I was about to file the work. Item 3 in this list
+> says to re-measure an item's premise before building it; the stronger form is
+> **grep the backlog for the idea, not just for the file.** The specific failure
+> is the same one this file keeps catching: the right arithmetic on a premise
+> nobody re-read.
 
 ### Rules (`dice.gd`) — band-and-delta applies, ratio does not
 
