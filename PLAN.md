@@ -180,10 +180,48 @@ godot --headless --path . -s _balance.gd
 
 # 3. Screenshot layout regression test (ensures UI fits 540x960 cleanly)
 #    --check runs the same flow and the same assertions without writing the
-#    store art, and exits non-zero on a failed check. Add `--at 360` / `--at 411`
-#    to re-measure the touch targets on narrower phones (4.1).
+#    store art, and exits non-zero on a failed check.
 xvfb-run -a godot --path . --rendering-driver opengl3 -s shot.gd -- --check
+
+# 4. The same gate at the widths the layout is not authored on. 4.1's software
+#    half: the touch targets are measured in dp, so a target that clears 48dp
+#    on the authored 540 canvas is not thereby safe on a narrower phone.
+#    Without these, a regression that only appears below 540 ships green.
+for dp in 360 411; do
+  xvfb-run -a godot --path . --rendering-driver opengl3 -s shot.gd -- --check --at $dp
+done
 ```
+
+> **Run gate 4, not just gate 3.** This was a real gap, not a formality: the
+> sweep was added in `3d56b23` and its result was written down nowhere, so a
+> person reading this file had no way to know it had been run or what it said.
+>
+> Measured 2026-09-30, smallest target 74x74 canvas units against a 48dp
+> minimum:
+>
+> | width | smallest target | margin |
+> |---|---|---|
+> | 540dp (authored) | 74.0 dp | +26.0 |
+> | 411dp | 56.3 dp | +8.3 |
+> | 360dp | 49.3 dp | **+1.3** |
+> | 320dp | 43.9 dp | −4.1, fails by design |
+>
+> **360dp passes by 1.3dp — 2.7% of the threshold.** That is the narrowest
+> width in common use and it is the only one with no room, so the hardware pass
+> in 4.1 is worth running for a narrower reason than "does it feel right": it is
+> the only evidence that a 49dp target is actually tappable, because the
+> software measurement has already said the size is legal and has nothing left
+> to say.
+>
+> The sharper way to put the same number: at 360dp the gate starts failing
+> below **72** canvas px, and the smallest target in the game is **74**. Two
+> pixels of slack. The whole range from 48 to 71px passes gate 3 at 540dp and
+> fails gate 4 at 360dp, because one canvas unit is one dp only on the authored
+> width — so gate 3 alone cannot catch it, which is the reason gate 4 exists.
+>
+> `--at 320` is expected to fail and is not run as a gate; see the note above
+> `TOUCH_MIN` in `shot.gd`, which is right about it — 320 is Play's screenshot
+> floor, not a screen width anyone holds.
 
 To re-shoot the Play listing (overwrites `play/screenshots/`):
 ```bash
