@@ -177,9 +177,9 @@ and your review text are the *entire* indexable surface, so the genre words live
 here — placed once each, in the opening where they read as prose rather than as
 a list. Repetition is a violation risk, so they are not used twice.
 
-Four claims in this block have been corrected, all after measuring the code
+Six claims in this block have been corrected, all after measuring the code
 rather than after reading it. The first two are pinned in `run.gd`'s
-`self_test`; the last two are checked where the copy itself lives, in `shot.gd`'s
+`self_test`; the rest are checked where the copy itself lives, in `shot.gd`'s
 `_check_copy_claims`, which is the only function holding the text — a check in
 `run.gd` would have to re-read the file to say anything about what the file
 says.
@@ -232,6 +232,34 @@ the easiest to ship. `_check_copy_claims` now builds each numeric claim from the
 constant that owns it, so moving `POOL_SIZE` or `FINAL_DEPTH` or the boss's
 health turns its row red instead of leaving the prose behind.
 
+**The next two were the same mistake a third time: a *starting* value written as
+a permanent one.**
+
+*"Each fight gives you one Focus and one Bank"* is true of Focus and false of
+Bank, and they are not the same kind of thing. Focus is a per-fight charge —
+`roll_all` resets `rerolls_left` but not `focus_left`, and there is a test that
+a roll does not refill it. Bank has no per-fight cap at all: a hold survives the
+roll it was made for, pays on that resolve, clears `banked`, and `toggle_bank`
+refuses only a spent or out-of-range die. `_bank_budget_tests` takes three holds
+in a single fight and all three pay. Read as one-per-fight, Bank is the weakest
+version of the mechanic, and that is the expensive direction to be wrong in —
+the reader stops looking for the option.
+
+*"Rust Golem grows its armour every turn until you break through it"* — it stops
+whether or not you break through, at `ARMOR_GROW_CAP` = 12, from a starting
+armour of 3. **48.5% of real depth-1 fights reach that ceiling** (400 fights,
+avg 16 turns, final armour 9.7). Treat that as an *upper* bound: the bot that
+measured it never spends Focus or Bank, so a player who does would break the
+Golem sooner and meet the wall less. The claim was still wrong as a statement
+of the rule, and the ceiling is the more interesting fact besides — 12 is where
+it stops precisely because Sunder's `cleave` 12 sits just above it.
+
+One measurement from this round was thrown away rather than reported. The first
+Golem probe set the enemy to 999999 health so fights would last long enough to
+time, and all 400 then sat out the full 40-turn limit and "reached the cap" by
+construction — 100%, a clean number that measured the probe rather than the
+game. A real fight has to be played to its real ending.
+
 The rest of the block was audited the same way and holds, so it is listed here
 once rather than re-derived: `run.gd`'s `self_test` now asserts the four named
 enemies' names *and* the behaviour each is described as having, plus the boss's
@@ -239,13 +267,14 @@ enemies' names *and* the behaviour each is described as having, plus the boss's
 the suite goes red. Now checked by `_check_copy_claims` rather than by eye:
 "nine fights" (`FINAL_DEPTH + 1`), "four dice" and "four numbers"
 (`POOL_SIZE`), "add a fifth die", "one of three upgrades", "your first three
-finished runs", and the boss's 78 health. Still checked by hand only, and
-holding: "one re-roll" (`base_rerolls`), "one Focus and one Bank" per fight
-(`base_focus`, granted at the fight and not each turn), Rust Golem's armour
-growth meeting its ceiling at `ARMOR_GROW_CAP` = 12, which is what Sunder's
-`cleave` 12 exists to answer, "Sharpen"/"Bless"/"New Die" matching the
-`UPGRADES` table word for word, and "playable offline" — there is no `http`,
-`socket` or `request` call in any script in this repo.
+finished runs", the boss's 78 health, the one Focus per fight (`base_focus`),
+Bank being uncapped, and the Golem's ceiling (`ARMOR_GROW_CAP`). Bank's
+cadence is additionally pinned in `dice.gd` by `_bank_budget_tests`, which
+takes three holds in one fight, so the copy is not the only thing asserting it.
+Still checked by hand only, and holding: "one re-roll" (`base_rerolls`),
+"Sharpen"/"Bless"/"New Die" matching the `UPGRADES` table word for word, and
+"playable offline" — there is no `http`, `socket` or `request` call in any
+script in this repo.
 
 The "still checked by hand only" list is not a list of things that are fine. It
 is the remaining work: every entry is a claim a constant owns and a one-line
@@ -288,19 +317,21 @@ ones that survive long enough get worse at what they do.
 
 Two ways out of a bad hand
 
-Each fight gives you one Focus and one Bank, and they are not the same kind of
-promise. Focus steps a die up to the next better face on that die — certain,
-and it costs you the die for the rest of the turn. Bank does not improve
-anything: it holds a die back whole, out of this turn and into the next. One
-is a trade for a guarantee, the other a bet that next turn is a better hand
-than this one.
+Each fight gives you one Focus. Bank is not limited like that — you can hold a
+die on every turn. They are not the same kind of promise. Focus steps a die up
+to the next better face on that die: certain, and it costs you the die for the
+rest of the turn, and there is exactly one charge per fight. Bank does not
+improve anything: it holds a die back whole, out of this turn and into the
+next. One is a single guaranteed step, the other a repeatable bet that next
+turn is a better hand than this one.
 
 What is in it
 
-Nine hand-built fights. Rust Golem grows its armour every turn until you break
-through it. Bloodletter heals off what it deals to you. Hexweaver curses one of
-your dice to nothing. Berserker gets angrier the longer it lives. The Devourer
-is armoured and enraged and it has 78 health.
+Nine hand-built fights. Rust Golem grows its armour every turn, to a ceiling of
+twelve — break through it before it gets there. Bloodletter heals off what it
+deals to you. Hexweaver curses one of your dice to nothing. Berserker gets
+angrier the longer it lives. The Devourer is armoured and enraged and it has 78
+health.
 
 A daily run
 

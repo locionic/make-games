@@ -943,6 +943,7 @@ static func _focus_tests() -> void:
 	_rush_tests()
 	_deflect_tests()
 	_bastion_tests()
+	_bank_budget_tests()
 	_pair_tests()
 	_pierce_tests()
 
@@ -1085,6 +1086,35 @@ static func _bastion_tests() -> void:
 	var plain := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
 	plain.toggle_bank(0)
 	Check.check(plain.block == 0, "without the card, banking is still just deferral")
+
+
+## Bank's budget, which is not a budget. Focus is a per-*fight* charge -- there
+## is a test above that a roll does not refill it -- so the store copy putting
+## the two in one sentence, "Each fight gives you one Focus and one Bank", is
+## true of Focus and false of Bank. A hold pays on the resolve after the roll it
+## survived and then clears `banked`, with no once-per-fight flag anywhere, so a
+## player can take one on every turn of the same fight. Read as one-per-fight
+## it is the weakest version of the mechanic, which is the expensive direction
+## to be wrong in: the reader stops looking for the option.
+static func _bank_budget_tests() -> void:
+	var lib := Encounter.library()
+	var e := Encounter.new(Encounter.warden(), [lib[2], lib[0]])  ## Ward, then Blade
+	e.enemy.armor = 0  ## isolate the block, so the count below is not a damage sum
+	var paid := 0
+	# Three separate turns, each: bank, survive a roll, resolve. The die's face is
+	# pinned so the block it pays is the same every turn and the total is a count.
+	for turn in 3:
+		e.dice[0].up = 5  ## Ward 9
+		Check.check(e.toggle_bank(0), "turn %d: a hold is available again after the last one paid" % (turn + 1))
+		e.roll_all(RandomNumberGenerator.new())
+		e.resolve_faces()
+		# A hold that paid leaves `banked` back at -1. Reading this the other way
+		# round counts a hold that *failed* to pay, which is how the first version
+		# of this test reported 0 of 3 while the block below said 27 and passed.
+		if e.banked == -1:
+			paid += 1
+	Check.check(paid == 3, "three holds in one fight all paid (paid %d)" % paid)
+	Check.check(e.block == 27, "and they were three Ward 9s, not one (block %d)" % e.block)
 
 
 ## Exposed (PRECISE_STRIKE): a hit of EXPOSE_AT makes the next turn's hits worth

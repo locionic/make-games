@@ -1077,6 +1077,16 @@ func _check_copy_claims(raw: String) -> void:
 		["one of three upgrades", "the offer is 1-of-3"],
 		["your first three finished runs each", "the unlock cap is three"],
 		["it has %d health" % boss.hp, "the boss health the copy quotes"],
+		# The two that were wrong for the same reason: each quoted a *starting*
+		# value as a permanent one. Bank has no per-fight cap at all -- a hold
+		# pays on the resolve after the roll it survived, then clears, and
+		# `dice.gd`'s `_bank_budget_tests` takes three in one fight -- and the
+		# Golem's growth stops at ARMOR_GROW_CAP whether or not you break it.
+		["each fight gives you %s focus" % COUNT_WORD[RunState.new().base_focus],
+			"the Focus charge a run starts with is base_focus"],
+		["you can hold a die on every turn", "Bank is not capped per fight"],
+		["to a ceiling of %s" % COUNT_WORD[Rules.Enemy.ARMOR_GROW_CAP],
+			"the Golem's armour ceiling is ARMOR_GROW_CAP"],
 	]:
 		_check(text.contains(str(claim[0]).to_lower()),
 			"the description's claim about %s -- looking for %r" % [claim[1], claim[0]])
