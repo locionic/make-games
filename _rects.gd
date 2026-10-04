@@ -5,8 +5,6 @@ extends SceneTree
 ##   xvfb-run -a godot --path . --rendering-driver opengl3 -s _rects.gd
 
 const RunState = preload("res://run.gd")
-var SAVE := RunState.SAVE_PATH  ## `var`, not `const`: SAVE_PATH is a static var
-const BACKUP := "/tmp/dice-save-backup2.json"
 
 
 func _init() -> void:
@@ -14,12 +12,30 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var had := FileAccess.file_exists(SAVE)
-	if had:
-		DirAccess.copy_absolute(SAVE, BACKUP)
-	if FileAccess.file_exists(SAVE):
-		DirAccess.remove_absolute(SAVE)
-
+	# This tool wants the title screen's *fresh* state -- "Begin the run" rather
+	# than "Play", and an empty stats line -- because a saved profile renders
+	# different text, and this file exists to measure text. It used to get that
+	# by copying the real save to a fixed /tmp path, deleting the save, and
+	# restoring it on the way out.
+	#
+	# That was eight lines wrapped around a data-loss window. A crash anywhere
+	# between the delete and the restore took the player's history with it, and
+	# nothing swept up afterwards. The fixed path made it worse than a lone run:
+	# two copies at once backed up to the same file, so the second overwrote the
+	# first and one of the two restores could put back the wrong history.
+	#
+	# Redirecting the path is what `test.gd:22` already does, it is one line
+	# instead of eight, and it closes the window rather than narrowing it: no
+	# copy, no delete, nothing written outside the project. It shares
+	# `test.gd`'s scratch filename deliberately, so at most one stray file
+	# exists rather than one per tool.
+	#
+	# If the redirect ever failed to take, the failure is that this dumps a title
+	# screen carrying the player's real stats -- a wrong measurement. The old
+	# code's version of that same failure destroys their save. Strictly milder,
+	# which is the whole reason this is safe to change in a file that cannot be
+	# run from here.
+	RunState.SAVE_PATH = "user://self-test.json"
 	var game = load("res://main.tscn").instantiate()
 	root.add_child(game)
 	for _i in 8:
@@ -68,9 +84,6 @@ func _run() -> void:
 	else:
 		_dump(game.screen, 0)
 
-	if had:
-		DirAccess.copy_absolute(BACKUP, SAVE)
-		DirAccess.remove_absolute(BACKUP)
 	quit()
 
 

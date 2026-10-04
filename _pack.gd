@@ -2,18 +2,45 @@ extends SceneTree
 ## Does an exported build still contain every file the game loads?
 ##   godot --headless --path . -s _pack.gd -- "Android"
 ##
-## The export filter is a list of globs in `export_presets.cfg` and nothing
-## checks it. That is not hypothetical: the Android preset excludes `_*.gd`,
-## and `dice.gd:3` and `run.gd:12` both `preload("res://_check.gd")`, so a
-## filter that drops that file ships a rules layer that cannot parse. The
+## Nothing checks the export filter. It has to be checked here, because the
 ## headless suite cannot see it -- it runs against the source tree, which has
-## the file. A blank screen on a Play download, found after upload.
+## every file -- and a Play download runs against the pack, which may not.
 ##
-## The dependency set is walked out from the main scene with
-## `ResourceLoader.get_dependencies`, not written out here. A hardcoded list is
-## a second copy of the game's shape that goes stale the day a file is added,
-## and a stale list passes while the real dependency went missing -- which is
-## the whole failure this file exists to catch.
+## This was a real defect, not a hypothetical one, and it is **fixed**. The
+## Android preset's `exclude_filter` was `_*.gd`, which took `_check.gd` with
+## it, and `dice.gd:3` and `run.gd:12` both `preload("res://_check.gd")` at the
+## top level -- a `const` preload resolves at parse time, so the rules layer
+## failed to compile and a device showed a black screen. `3e743e5` replaced the
+## glob with an explicit list of the scripts that are genuinely dev-only, and
+## the filter today is literal filenames rather than globs: `_balance.gd`,
+## `_pack.gd`, `_probe.gd`, `_rects.gd`, `_stats.gd`, `test.gd`, `shot.gd`,
+## `icon.gd`, `extension_api.json`. `_check.gd` is absent from that list, and
+## being absent from it is the whole thing this file is here to notice.
+##
+## The named check at the bottom asserts it rather than trusting the list to
+## stay written. This header used to say the filter "is a list of globs" and
+## that the exclusion "is not hypothetical", both in the present tense and both
+## untrue -- the second because the commit that fixed it is in this file's own
+## history. A gate's header describing the incident that motivated it, forever,
+## reads to the next person as a live bug in their build. If this ever looks
+## wrong again, check `3e743e5` before assuming the fix was reverted.
+##
+## The dependency set is not written out here. A hardcoded list is a second copy
+## of the game's shape that goes stale the day a file is added, and a stale list
+## passes while the real dependency went missing -- which is the whole failure
+## this file exists to catch. So the set is *read* out of the shipped scripts
+## instead, by the regex in `_referenced` below.
+##
+## The obvious alternative, walking out from the main scene with
+## `ResourceLoader.get_dependencies`, was measured and does not work: it returns
+## `["res://game.gd"]` for `main.tscn` and an **empty list for every `.gd` in
+## the project**, including the two that `preload` the rules layer. So the walk
+## would stop after a single hop and never reach `_check.gd` -- not the file it
+## is least able to miss, the one this whole file exists to watch. It is called
+## out at length at the top of `_referenced`, and it is named here because this
+## header used to describe that walk, and a header describing a mechanism the
+## code does not use is the exact failure mode the gate below is built to catch,
+## one level up.
 ##
 ## The file list alone is a statement about names, so the pack is also
 ## *executed* below, which reads the shipped bytes. That second probe needed two
@@ -24,7 +51,8 @@ extends SceneTree
 ## `SCRIPT ERROR` lines in its output are the only evidence. A pack missing
 ## `_check.gd` really does print `Parse Error: Preload file "res://_check.gd"
 ## does not exist` at dice.gd:3 and run.gd:12, then `Compile Error: Failed to
-## compile depended scripts` at game.gd:0 -- a shipped build whose main scene
+## compile depended scripts`, which the engine reports against game.gd's line 0
+## -- a shipped build whose main scene
 ## cannot load, which on a phone is a blank screen and nothing else.
 ##
 ## It also answers from the source tree when the process happens to be standing
@@ -134,7 +162,7 @@ func _runs(pack: String, preset: String) -> void:
 ## stores compiled and remapped names -- `dice.gd.remap` and `dice.gdc` both
 ## stand for `dice.gd` -- so both are folded back onto the name a dependency
 ## walk produces, otherwise every single script reads as missing.
-func _stored(log: String) -> Dictionary:
+static func _stored(log: String) -> Dictionary:
 	var strip := RegEx.new()
 	strip.compile(ANSI)
 	var out := {}
@@ -154,12 +182,24 @@ func _stored(log: String) -> Dictionary:
 ## Every file the shipped scripts reach for by a literal path.
 ##
 ## Read out of the source text rather than asked of the loader, because
-## `ResourceLoader.get_dependencies` is not reliable here: running from a
-## directory rather than from a pack it answers for two of this game's eight
-## files and calls the rest dependency-free, which is a gate that passes
-## because it cannot see. A preload is a literal string in the file, so
-## reading the file cannot come back half-answered.
-func _referenced(shipped: Dictionary) -> Dictionary:
+## `ResourceLoader.get_dependencies` is not merely unreliable here -- it is
+## unreliable in the one direction that matters. Measured: it answers for one of
+## this game's eight files and calls the rest dependency-free, and the one it
+## answers for is the main scene, whose single answer is `game.gd`. Every
+## script, including both that preload the rules layer, answers empty. A walk
+## built on it terminates after one hop and never reaches `_check.gd`, which is
+## a gate that passes because it cannot see the file it was written for. A
+## preload is a literal string in the file, so reading the file cannot come back
+## half-answered.
+##
+## Static, as is `_stored`, and that is not tidiness: neither touches instance
+## state, both take everything they read as an argument, and making them static
+## is the only reason `test.gd` can reach them at all. Instantiating this script
+## to call them would run `_init`, which exports a pack and then calls `quit()`.
+## So without `static` the entire logic of the one gate that can see an export
+## filter dropping a file is unreachable from the headless suite, and the only
+## gate that could test it is the one that cannot run.
+static func _referenced(shipped: Dictionary) -> Dictionary:
 	var re := RegEx.new()
 	re.compile("(?:pre)?load\\(\"(res://[^\"]+)\"\\)")
 	var into := {}

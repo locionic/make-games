@@ -10,10 +10,15 @@ folder is store art only, kept out of the build by `.gdignore`.
 **`icon.png` and `feature.png` are not regenerable.** Both were replaced on
 2026-09-29 with art generated through OmniFlash (`POST /generate/image` on
 `localhost:8080`), and the originals are kept beside them as `*.bak-flat` — at
-8.4 KB and 17.3 KB they were near-flat fills, which is why they were replaced.
-`icon.gd` still exists and still draws a code-only feature graphic, but it is
-now the *fallback*: running it will overwrite the generated `feature.png`. Copy
-it back from `*.bak-flat` if you want the original, not the replacement.
+8.4 KiB and 17.3 KiB they were near-flat fills, which is why they were replaced.
+`icon.gd` still exists and still draws both of them in code, but it is now the
+*fallback* and it will not run without `--overwrite`. Without it, `icon.gd`
+exits having written nothing. With it, it replaces the generated `feature.png`
+**and `icon.png`** — the launcher icon, the only image inside the APK. Note
+that `*.bak-flat` holds the *originals*, not this art: restoring from them
+gives you back the near-flat fills that were replaced for being near-flat, not
+the generated files. The generated pair lives in git history and nowhere else,
+so `git checkout -- icon.png play/feature.png` is the way back.
 
 Note when scripting against that API: `/generate/image?download=true` returns a
 JPEG whatever the response filename says, so the 24-bit PNG Play wants has to be
@@ -70,14 +75,31 @@ the press/unmute round-trip and the bus state, on a staged copy of the save.
 
 ## Sound effects
 
-Seven one-shots, **synthesised by `_mksfx.py`** (stdlib Python, seed 20260929)
-rather than generated. FlowMusic is a music model and ignores `duration` — a 5s
-request comes back at two minutes — so it cannot make a 200ms die-clack. 45 KiB
-(46,338 bytes) for all seven, no licence, and they land exactly on the event that
-asked for them. Regenerate with `python3 _mksfx.py` then the ffmpeg loop in its
-docstring. This said 43 KB until 2026-09-30, and was wrong: the files were
-regenerated after that number was written — the decay tightening and the tail
-fade below both landed in them — and nothing recalculated it.
+Seven one-shots, **six of them synthesised by `_mksfx.py`** (stdlib Python, seed
+20260929) rather than generated. FlowMusic is a music model and ignores
+`duration` — a 5s request comes back at two minutes — so it cannot make a
+200ms die-clack. 45 KiB (46,338 bytes) for all seven, no licence, and they land
+exactly on the event that asked for them. This said 43 KB until 2026-09-30, and
+was wrong: the files were regenerated after that number was written — the decay
+tightening and the tail fade below both landed in them — and nothing
+recalculated it.
+
+**The seventh does not come from that script, and this section used to claim it
+did.** `_mksfx.py` builds `roll` from seven impacts and a 50 ms tail. Measured
+against its own seed that is **0.509s**, and it cannot exceed **0.520s** under
+*any* seed, because the per-impact jitter is 30 ms and there are seven of them.
+The shipped `roll.ogg` is **0.711s** — `ffprobe` and the engine's `get_length()`
+agree, and the duration gate below pins it there. No hit count from 5 to 14
+produces 0.711s either (`range(11)` lands at 0.722s), so the file came from a
+generator that is not in the repo.
+
+Both were first committed together in `088a3f1` and neither has been edited
+since, so this is **not** drift: the claim was false on arrival, and every
+`git log` answer to "which one changed?" is the same commit. Regenerate the
+other six with `python3 _mksfx.py` then the ffmpeg loop in its docstring — **but
+not `roll`**, which would come out 0.2 s short and turn the duration gate below
+red. The other six are not in doubt: `tap`, `strike`, `hurt`, `block`, `win` and
+`lose` each equal what the script's own arithmetic produces, to the sample.
 
 Every duration in the table below is now asserted by `shot.gd --check` against
 the engine's own `get_length()`, and both beds against 40s, so the table cannot
@@ -89,10 +111,10 @@ length and stops still ringing; that needs decoded samples, not a length.
 | file | dur | fires on |
 |---|---|---|
 | `audio/roll.ogg` | 0.71s | the opening roll, and the re-roll at −6 dB |
-| `audio/tap.ogg` | 0.07s | queueing or unqueueing a die |
+| `audio/tap.ogg` | 0.07s | any mode change on a card or a button |
 | `audio/strike.ogg` | 0.22s | damage reaching the enemy |
 | `audio/hurt.ogg` | 0.30s | damage getting past your block |
-| `audio/block.ogg` | 0.34s | a roll that gained block |
+| `audio/block.ogg` | 0.34s | a roll that gained block, and a Focus spend |
 | `audio/win.ogg` | 1.65s | beating the Devourer |
 | `audio/lose.ogg` | 1.90s | the run ending |
 
@@ -101,6 +123,29 @@ decays — that drop is what makes it read as an impact rather than a beep. The
 two hits are deliberately tellable apart with your eyes shut: `strike` is bright
 and short, `hurt` is low with a body thud under it. `hurt` fires only on damage
 that got **through** block, so a full block does not thud like a killing blow.
+
+**Every row above was checked against the call sites, and two of them were
+wrong.** `roll`, `strike`, `hurt`, `win` and `lose` name every place they fire,
+exactly. `tap` and `block` did not:
+
+| sound | sites | what the table used to say |
+|---|---|---|
+| `tap` | 4 | queueing or unqueueing a die — one of the four |
+| `block` | 2 | a roll that gained block — one of the two |
+
+`tap` fires on queuing a die, banking a die, **arming** Focus and **arming**
+Bank. So it is not a sound about dice at all; it is the interface's click, and
+it marks *any* change of mode. That is the right design — one tick for "you have
+switched something" — and the old row made it read as a semantic die sound,
+which is the opposite. `block` also sounds on a Focus spend —
+`_sfx("block", 2.0)` at `fight.gd:580` — which is coherent, since a Focus charge
+converts to block, but it is not "a roll that gained block".
+
+Neither was caught by reading, and neither is a typo: both rows were true of one
+call site and silent about three. `test.gd`'s `_sfx_names` now walks every
+`_sfx`/`play_sfx` call site and checks each name against `game.SFX` — the
+direction `shot.gd`'s duration gate does not look, since it walks the keys and
+not the callers.
 
 `game.gd:play_sfx()` owns a 6-player pool and round-robins it, because a
 clatter and a hit can overlap and one player would eat the other. Every player
@@ -129,8 +174,8 @@ for an ear.
 
 | File | Spec | Status |
 |------|------|--------|
-| `../icon.png` | 512×512 PNG with alpha, ≤1024 KB | 512×512 RGBA, 308 KB |
-| `feature.png` | 1024×500 PNG/JPG, no alpha | 1024×500 RGB PNG, 567 KB |
+| `../icon.png` | 512×512 PNG with alpha, ≤1024 KB | 512×512 RGBA, 308 KiB |
+| `feature.png` | 1024×500 PNG/JPG, no alpha | 1024×500 RGB PNG, 567 KiB |
 | `screenshots/*.png` | 2–8, 16:9 or 9:16, ≥320px | 8 shots at 540×960 (9:16) |
 
 The eight are checked against these specs by re-running `shot.gd`; the generator
@@ -159,13 +204,83 @@ that it and `02-title-pick-your-hand` are both title screens at near-identical
 file size, and the slot was worth more to the armoured-fight shot. The spare is
 there if you disagree.
 
+**Six of the eight screenshots show a UI this repository has never contained.**
+Not stale — that word is wrong, and it is the word a reader would stop at. The six
+are `01`, `02`, `05`, `06`, `07` and `08`, and they are exactly the six files that
+are byte-identical to `088a3f1`. The only genuine renders are `03` and `04`, which
+another session re-shot after the code moved on. **Two of the eight images Play
+will display are pictures of this game.**
+
+They show three screens the project has never drawn. A title: `A RUN OF NINE
+FIGHTS`, `CHOOSE YOUR HAND`, `Unlocks at 1 / 3 finished runs`, `BEGIN THE RUN`, and
+a hand of MOUND / SHARD / TALON where the real catalogue is Blade, Sunder, Ward,
+Hex, Riposte, Spark, Fang (`dice.gd:350-396`). A fight: `DEPTH 1 OF 9`, `FIGHT 1`,
+`GRUNT`, `DEATH ROLL`, `TAP TO ROLL`, `SHUNT`, `11 days left`, `REROLL 1`, `END
+TURN`. A reward and an end: `THE OFFER — 1 OF 3`, `TAKE ONE`, `RUN 2/9   DIED TO:
+GRUNT`, `RUN OVER`, `DEPTH REACHED 5 OF 9`, `COPY RESULT`.
+
+**`08` is the worst case, because it is almost right.** It shows `DEPTH 4 OF 9`
+against `WARDEN`, and the ladder has no Warden anywhere: the nine names are Grunt,
+Rust Golem, Bloodletter, Hexweaver, Ironhide, Stone Sentinel, Fungal Bloomer,
+Berserker, The Devourer (`run.gd:146-158`). The labels are 1-indexed — `02` pairs
+`DEPTH 1 OF 9` with `GRUNT`, which is index 0 — so `DEPTH 4 OF 9` is the
+Hexweaver slot and `Ironhide` would read `DEPTH 5 OF 9`. `run.gd:620-628` asserts
+four of those names against the behaviour each implies. A plausible screen with the
+wrong monster in it is worse than an obviously broken one, because it survives a
+skim.
+
+Three findings make this provable rather than suspected. First, none of it can be
+assembled at runtime: every button assigns its label verbatim — `b.text = text` at `theme.gd:144` and `fight.gd:421` — so `END TURN` is not `End turn` uppercased
+and `TAP TO ROLL` is not `Roll`. `F_DISPLAY` (`theme.gd:36`) is a font *size*, not a
+case transform. Every label is a literal, and these literals are absent; the
+case-insensitive hits that do exist are prose, e.g. `shot.gd:405` is
+`_ergonomics(game, "run over")`, a check name on the check that proves the real
+run-over screen is still reachable. Second, the shapes are wrong too, not just the
+words: the fight screen's button row is `Roll`, `Focus`, `Bank`, `Re-roll`, `End
+turn` — five across, opening at `roll_btn = _mk_button(btns, "Roll", T.GOLD)` at `fight.gd:320` — where `02` and `08` each show two; the
+re-roll widens to `Re-roll (%d)` (`fight.gd:1163`), never `REROLL 1`; and the status
+line is `block %d     re-rolls %d     focus %d     turn %d` (`fight.gd:1130`), not
+`FIGHT 1` or `DEATH ROLL`. Third, the timing rules out "an older render of a screen
+that has since changed": `git log --since='2026-09-30 14:51' -- game.gd` is
+**empty**, and `git diff` on `game.gd` is 29 insertions of comments plus one
+`100`→`146` layout literal.
+
+All six are byte-identical to `088a3f1`, the initial commit (2026-09-30 04:49) —
+the same commit that first added `shot.gd`. Their 14:50 mtimes are the checkout's,
+not a render's, so the directory already carried these images when the project was
+first committed and no run since has replaced them.
+`screenshots-spare/01-title-first-launch.png` is byte-identical too;
+`09-fight-impact.png` is not.
+
+A forensic check that looked decisive is not, and is recorded here so it is not
+re-run: PNG IDAT chunk count tracks compressed size, not encoder, and comes out 4,
+5 or 6 across all ten files, so it separates nothing. All ten do share 8192-byte
+IDATs and an `sRGB` chunk — one libpng build wrote them all — so encoder identity
+is not a discriminator either. Only the strings are.
+
+`_check_store_art` cannot catch this, and the honest reason is worth more than a
+patch that pretends otherwise: it asserts count, dimensions and alpha, which are
+the things Play rejects an upload *over*. Content freshness is not in that set.
+`shot.gd:398/406/420` still call `_grab(5, "reward-pick-one")`, `_grab(6,
+"run-over")` and `_grab(7, "share-result")`, so a re-shoot produces correct images
+— but a green `_check_store_art` says nothing about whether the bytes on disk are
+the ones the generator produced, and that is the gap. A mtime check would not close
+it either: it is green on a fresh clone, which is the check that cannot fail.
+
+**Re-shoot before uploading, and treat it as a blocker rather than a chore.**
+`_grab` rewrites the whole folder, which is why this was never done per-screen as
+things changed: it would overwrite `03` and `04`, which are another session's
+uncommitted work. That leaves nothing safe to do from inside this tree, so the
+re-shoot is that session's call or yours — not something to route around.
+
 ## Short description (80 char limit)
 
 ```
-Nine fights. One pool of dice. Roll, re-roll once, and take what you can.
+Nine fights. One pool of dice. Roll, spend your re-roll, and take what you can.
 ```
 
-That is 73 characters of the 80 Play allows. Both text blocks are length-checked
+That is 79 characters of the 80 Play allows, so the next reword has one to
+spare. Both text blocks are length-checked
 by `shot.gd --check` (`_check_listing_text`), which prints each count on every
 run and fails on the cap — so rewording either block cannot quietly walk past a
 limit that only shows up when the console rejects an upload.
@@ -177,7 +292,7 @@ and your review text are the *entire* indexable surface, so the genre words live
 here — placed once each, in the opening where they read as prose rather than as
 a list. Repetition is a violation risk, so they are not used twice.
 
-Six claims in this block have been corrected, all after measuring the code
+Nine claims in this block have been corrected, all after measuring the code
 rather than after reading it. The first two are pinned in `run.gd`'s
 `self_test`; the rest are checked where the copy itself lives, in `shot.gd`'s
 `_check_copy_claims`, which is the only function holding the text — a check in
@@ -209,26 +324,45 @@ placed at the third is a check that cannot fail.
 `POOL_SIZE` is 4 and New Die adds exactly one, so a hand is four until a player
 takes a card whose text has no number on it. Measured across 2439 bot fights:
 **99.9% were four, and 3 were five** — only 0.7% of runs ever took New Die at
-all, because `_weak_pick` chooses on the biggest headline number and "Add a
-wild die to your pool." has none. The copy contradicted itself two paragraphs
+all, because `_weak_pick` chooses on the biggest headline number and "Add one
+of your unlocked dice." has none. (That card's text was itself wrong and has
+been corrected — see "New Die was offering a die that does not exist" below. It
+is still deliberately number-free, so the 0.7% still stands.) The copy
+contradicted itself two paragraphs
 earlier by correctly saying "Add a fifth die to the pool"; that sentence is what
 made four the default and this one disagreed with it.
 
 **"Each face is damage, block, or a bonus re-roll" was false for 3 of the 42
 faces.** Sunder carries two faces and Riposte one, all labelled `rust`/`fend`
 and all `(0, 0, 0)` — they are the *natural* worst face on those dice, not an
-overlay, and `BEH_CURSE` works by dragging a die down to exactly them. So 7.1%
-of the roster is a roll that gives you nothing, and this block also says
-"Hexweaver curses one of your dice to nothing." Two sentences, one section
-apart, flatly disagreeing. The block now says "A few faces are nothing at all,
-which is exactly what Hexweaver reaches for."
+overlay. So 7.1% of the roster is a roll that gives you nothing, and this block
+also said "Hexweaver curses one of your dice to nothing." Two sentences, one
+section apart, flatly disagreeing.
 
-Both are the same failure and worth naming: **length was checked and accuracy
-was not.** The block sits at 2854 of Play's 4000 characters and every word of it
+**And the sentence that replaced it was false too, in the same way.** "A few
+faces are nothing at all, which is exactly what Hexweaver reaches for" — no.
+`BEH_CURSE` picks a die at random and drops it on *that die's* lowest-`worth()`
+face, which is a nothing on Sunder and nowhere else: Blade's is a plain `2`,
+Ward's a `2` that blocks instead of striking, Hex's a `1`. Measured by writing
+the copy's own claim as a check and letting the gate decide, which failed on
+exactly those three. The clause is now "A few faces are nothing at all", and the
+enemy's own line says what it does: "drags one of your dice down to its worst
+face". The two halves of the earlier fix — the face count, which was right, and
+the Hexweaver claim, which was not — had to be separated before either could be
+correct. `run.gd`'s `self_test` now asserts the half that can drift.
+
+All three are the same failure and worth naming: **length was checked and
+accuracy
+was not.** The block now sits at 3153 of Play's 4000 characters — the 2854 in
+the first draft of this note was true when written, and each of 3046 and 3121
+was left behind by the corrections above, 66 out and then 32 out, which is the
+same drift it describes, one level down — and every word of it
 is a claim about the game, and nothing read those words back against the code.
-The two above are internally consistent — each contradicts a *later* sentence
+The first two are internally consistent — each contradicts a *later* sentence
 in the same block — which is the hardest kind of wrong to catch by reading and
-the easiest to ship. `_check_copy_claims` now builds each numeric claim from the
+the easiest to ship. The third is worse than either: it was the *repair*, and
+repaired copy gets read as settled. `_check_copy_claims` now builds each numeric
+claim from the
 constant that owns it, so moving `POOL_SIZE` or `FINAL_DEPTH` or the boss's
 health turns its row red instead of leaving the prose behind.
 
@@ -260,6 +394,60 @@ time, and all 400 then sat out the full 40-turn limit and "reached the cap" by
 construction — 100%, a clean number that measured the probe rather than the
 game. A real fight has to be played to its real ending.
 
+**"One re-roll for the whole hand" was false twice over, and the second reason
+was a bug in the game rather than in the sentence.** `base_rerolls` is 1, so
+the copy was right about the number and wrong about the total, for two
+independent reasons. FOCUS ("+1 re-roll every turn") raises the *base*, so a run
+holding it opens on two or more — 16.3% of 12048 turns across 300 bot runs. And
+the *earned* bonus re-roll was unreachable until this round's fix to `dice.gd`: a
+Hex 4/5/6 or one of Spark's two spark faces granted one on the resolve, where
+`fight.gd` had already cleared the roll and the next `roll_all` reset the
+budget, so it was logged and discarded — 44.6% of turns now open holding one the
+run had not bought. Between them, 53.5% of turns open with two or more. The
+block now says "You get one re-roll a turn, so spend it or lose it — and rolling
+well earns you another for the next one", and `_check_copy_claims` asserts both
+halves plus a negation row over the three phrasings it used to claim, because a
+check that only asserts the new phrase sits happily over the old ones.
+
+**"New Die was offering a die that does not exist."** The card read "Add a wild
+die to your pool." What it adds is one of `bonus_dice()` — Riposte, Spark or
+Fang, the three a finished run unlocks — and nothing in the roster is wild. A
+player who took it expecting a blank to shape got a named die with fixed faces.
+The store copy had independently softened the same card to "Add a fifth die to
+the pool", which is *true* and so hid the lie rather than fixing it. The card
+now reads "Add one of your unlocked dice."
+
+**"The next one starts with a fuller hand" was the ninth, and the only one where
+the false half is not the number.** The count beside it was right — `unlocked`
+caps at three, and `_check_copy_claims` pins that half today — and the sentence
+then spent eleven words on a consequence that does not happen. `owned_dice()`
+really does grow to seven: four starters plus one per finished run. But
+`set_loadout` trims whatever it is handed to `POOL_SIZE` and tops it back up,
+and `game.gd`'s title picker refuses to add past `POOL_SIZE` as well (it renders
+`pool.size() / POOL_SIZE`, so the cap is on screen). **Every run in the game
+opens on four dice**, so a die you have earned is one you can *pick* at the
+title, not one that is dealt to you.
+
+The reason this one survived eight others is worth writing down, because it is
+the same contradiction shape and a *later* sentence gave it away. Four lines
+below the false clause the block says "past four, the only way wider is a New
+Die taken between fights" — which is only true if unlocking does *not* widen the
+hand. Both sentences were sitting in the shipped copy at once, one contradicting
+the other, and the file's own method for finding these ("each contradicts a
+*later* sentence in the same block") is what caught it. Reading for it alone
+would not have: both halves are individually reasonable sentences.
+
+What every other one in this list had in common was that the *number* was the
+lie. This one's number was true and the inference drawn from it was not, which
+is why `_check_copy_claims` — a check that reads sentences — could pin the other
+eight and not this one: the row `["your first three finished runs each", "the
+unlock cap is three"]` was green throughout, because it was checking the half
+that was true. The invariant now lives in `run.gd::_check_fuller_hand_claim`,
+where it is stated against the code rather than against this file, with a
+liveness check in front of it so it cannot pass on a build where unlocking is
+broken. `_check_copy_claims` gained the replacement phrase and a negation row
+over "starts with a fuller hand".
+
 The rest of the block was audited the same way and holds, so it is listed here
 once rather than re-derived: `run.gd`'s `self_test` now asserts the four named
 enemies' names *and* the behaviour each is described as having, plus the boss's
@@ -268,49 +456,158 @@ the suite goes red. Now checked by `_check_copy_claims` rather than by eye:
 "nine fights" (`FINAL_DEPTH + 1`), "four dice" and "four numbers"
 (`POOL_SIZE`), "add a fifth die", "one of three upgrades", "your first three
 finished runs", the boss's 78 health, the one Focus per fight (`base_focus`),
-Bank being uncapped, and the Golem's ceiling (`ARMOR_GROW_CAP`). Bank's
+Bank being uncapped, the Golem's ceiling (`ARMOR_GROW_CAP`), the one re-roll a
+turn (`base_rerolls`), the sentence that a good roll earns the next one, and the
+unlock phrasing ("unlock a die you can pick at the title") with a negation row
+over "starts with a fuller hand". The
+re-roll pair also has a negation row over "single re-roll", "re-roll once" and
+"one re-roll for the whole hand", and the two categorical roster claims now
+walk `library() + bonus_dice()` directly: the copy's "a few faces are nothing
+at all" holds only while faces worth nothing still exist, and "rolling well
+earns you another" only while faces that hand out a re-roll do. Bank's
 cadence is additionally pinned in `dice.gd` by `_bank_budget_tests`, which
 takes three holds in one fight, so the copy is not the only thing asserting it.
-Still checked by hand only, and holding: "one re-roll" (`base_rerolls`),
-"Sharpen"/"Bless"/"New Die" matching the `UPGRADES` table word for word, and
-"playable offline" — there is no `http`, `socket` or `request` call in any
-script in this repo.
+Still checked by hand only: "playable offline" — there is no `http`, `socket`
+or `request` call in any script in this repo, only three hits and all three are
+the word inside a comment (two in `_balance.gd`, which does not ship, and one in
+`game.gd`'s header) — and the upgrade names "Sharpen"/"Bless"/"New Die", which do match
+the `UPGRADES` table word for word. The *descriptions* beside them do not, and
+until this round that was recorded as a single claim about all three, which was
+false: the store copy says "Sharpen every damage face" where the table says
+"Every damage face +1.", and the third turned out to be outright wrong (see
+"New Die" above). The names are now separated from the descriptions so the
+next drift cannot hide behind one true half.
 
 The "still checked by hand only" list is not a list of things that are fine. It
 is the remaining work: every entry is a claim a constant owns and a one-line
-row in `_check_copy_claims` would pin, and two of the four claims that turned
-out to be false had been on a hand-checked list of exactly this kind first.
+row in `_check_copy_claims` would pin. It was a three-entry list, and **two of
+the three were false** — the one re-roll, and the word-for-word match. Both had
+been read, both had looked right, and "read it and it holds" is exactly the
+method that let them through. "playable offline" is what is left, and it is the
+only entry that has now been checked against the tree rather than against the
+eye — `grep -n 'HTTPRequest\|http\|socket\|request' *.gd main.tscn` is three
+lines, all comments, zero calls, so the claim holds. Its own count was wrong
+while the claim was right, which is the ninth one's lesson arriving one entry
+early: it said two hits and there are three, and it counted a dev tool as a
+shipped script. The lesson generalises past this list: the claims that survived were the
+ones with a number in them, and every claim that turned out to be false was one
+whose number was a *starting* value, a *base* value, or not a number at all.
 
 Two things in the block stay unverifiable from here and are the owner's to set
 in the Console, not code claims: the "no ads / no in-app purchases" lines and
 the developer's own name and review text.
 
+**The same method then found a false claim on a different surface — the upgrade
+cards themselves — and nothing in the repo was checking that surface at all.**
+`ADD_DIE` was caught by reading it against the code; the other eleven were not
+read that way, and `PRECISE_STRIKE` did not survive it. Its description read
+*"A hit of 10+ leaves it exposed: your hits on it count for half again"*, which
+describes a standing debuff. `dice.gd` spends the window in the next resolve
+(`enemy.exposed = maxi(0, enemy.exposed - 1)`) and the section comment above
+those tests puts it in as many words — *"a hit of EXPOSE_AT makes the next
+turn's hits worth half again, and no longer"* — so a player picking this card
+would have believed the
+enemy stayed weak rather than buying one turn of it. The copy now says "for one
+turn". It is the wild die again: a card promising something the rules do not do.
+The other ten hold on the same pass; `REFORGE` is loose rather than false (it
+raises the weakest face of a **random** one of your dice, not your weakest die)
+and is left alone, because the code's own comment describes it the same way and
+that is a wording call, not a contradiction.
+
+**"The other ten hold on the same pass" did not hold, and checking it the way
+that sentence was checked is what proved it.** `BULWARK` read *"Reflect 4 damage
+when struck"*, and thorns fire on `hit > 0` — `soaked = mini(block, enemy.atk)`,
+so an attack the player fully blocks reflects nothing. The rule is defensible;
+there was no strike to reflect. The sentence was not: a player holding a Ward is
+doing the one thing that suppresses this card, and the card did not say so. It is
+`PRECISE_STRIKE`'s shape exactly, and the game already knew the distinction —
+`hurt.ogg` "fires only on damage that got **through** block, so a full block does
+not thud like a killing blow", written a screen away. The card now says "Reflect
+4 damage when hit. A full block stops it."
+
+The reason ten survived a pass and this one did not is worth recording. Reading a
+card against the code is the method, and it worked here — but "reflects when
+struck" and "reflects when hit" differ by a word, and both readings are
+*supported* by the code until you go looking for what `hit` is computed from.
+Nothing about the sentence announced itself as wrong the way "your weakest die"
+and "half again, and no longer" did. Those had a contradiction inside them.
+
+And reading it turned up something the copy never had: **a live exploit, on the
+same card.** `_bastion_tests` asserted "releasing it does not pay again" and
+passed — but "does not pay again" was checked as *the release is not a gain*, and
+the release **kept** the payment, which is the same state as a free hold. Ten
+on/off taps on one unspent die was **40 block in a single turn**, with nothing
+anywhere capping `block`. The test had never re-taken a released die, and
+displacement was overpaying from the other side (it kept the first die's 4 *and*
+added the second's, so one decision paid twice). A release now gives the block
+back, in both places `banked` is cleared.
+
+Two details that were wrong in the fix before they were right in it. The refund
+has to read `bank_carried`, because a die held at the end of last turn already
+paid into a block the enemy's turn then spent — refunding that one claws 4 out
+of block the player earned *this* turn. And the refund has to run *before* that
+flag is cleared, so it can still see it. Both are checked; the second by the
+ordering of the calls, which is why the comment at the call site says so.
+
+The generalisation is the one this file keeps arriving at, and this time the
+evidence is a check that **passed**: a test naming the mechanism it does not
+test is worse than no test, because it is the one a reader checks and stops.
+"Does not pay again" reads like it covers release; it covered the sign of the
+change, not its size.
+
+**And the last one was the *anchor*, one paragraph from a sentence already
+repaired.** "You are not managing a timer or a stat bar" made the same promise
+this file's own upgrades paragraph had already withdrawn — MEND heals 14, VIGOR
+grants +8 max health — thirty lines below the correction, on a screen carrying
+two `ProgressBar`s (`enemy_bar` at `fight.gd:243`, `player_bar` at `:298`).
+`_store_copy` should have stopped it and did not, because it asserted
+`"not a stat bar" not in text` and this sentence reads *"not managing a timer **or
+a stat bar**"* — the substring is simply absent. Re-anchored on the noun.
+
+That is the fourth time this sweep has found a second occurrence of something
+already repaired once (`capitalize()` on two lines, the article-doubled title on
+three, the stat-bar absolute on two). In every case the repair was right and the
+**anchor** was what failed, which is the same generalisation as the passage above
+one level up: a check names what it was told to look for, and re-reading the
+thing that was complained about only ever confirms it is gone.
+
+The method that finds these is enumerating *every* quantitative sentence in the
+block and checking each — thirty-one came back this round, against one reported
+defect. The rest were verified against code and several by measuring rather than
+reading: the audio table's "45 KiB (46,338 bytes)" is the exact sum of the seven
+SFX, and both beds match to the byte.
+
+Copy now reads "No timer, and nothing to grind: you are reading four numbers and
+choosing which one to bet. Health is the one number that ends the run" — true,
+and it keeps the four counters the HUD prints while conceding the one bar the
+game really has.
+
 ```
 Nine fights stand between you and The Devourer. You bring four dice.
 
 That is the whole game. Roll them, read the faces, and decide which ones were
-not worth the roll. You get one re-roll for the whole hand, so spend it or
-lose it. Then end the turn and watch what the thing across from you does about
-it.
+not worth the roll. You get one re-roll a turn, so spend it or lose it — and
+rolling well earns you another for the next one. Then end the turn and watch
+what the thing across from you does about it.
 
-Between fights you take one of three upgrades, and upgrades change your dice,
-not a stat bar. Sharpen every damage face. Bless every block face. Add a fifth
-die to the pool. Every choice reshapes the hand you roll next fight, so two
-runs never feel the same.
+Between fights you take one of three upgrades, and they change your dice or the
+rules you roll them under — only two of the twelve buy hit points back. Sharpen
+every damage face. Bless every block face. Add a fifth die to the pool. Most
+reshape how the hand plays out, so two runs never feel the same.
 
 A turn-based roguelike, built around a puzzle
 
 Every turn is one decision — which dice were wasted, and which of those you can
-afford to roll again. That is the strategy, and it is the whole strategy. You
-are not managing a timer or a stat bar; you are reading four numbers and
-choosing which one to bet.
+afford to roll again. That is the strategy, and it is the whole strategy. No
+timer, and nothing to grind: you are reading four numbers and choosing which one
+to bet. Health is the one number that ends the run.
 
 How a turn works
 
 You roll every die in your pool at once. Each face is damage, block, or a
-bonus re-roll. A few faces are nothing at all, which is exactly what Hexweaver
-reaches for. Tap any dice you are unhappy with to queue them, spend the
-turn's single re-roll, and then everything you are holding resolves together —
+bonus re-roll. A few faces are nothing at all. Tap any dice you are unhappy
+with to queue them, spend the
+turn's re-roll, and then everything you are holding resolves together —
 so you commit before you know how it lands. Your damage goes through the
 enemy's armour, and what it hits first, you. Enemies answer every turn, and the
 ones that survive long enough get worse at what they do.
@@ -329,9 +626,9 @@ What is in it
 
 Nine hand-built fights. Rust Golem grows its armour every turn, to a ceiling of
 twelve — break through it before it gets there. Bloodletter heals off what it
-deals to you. Hexweaver curses one of your dice to nothing. Berserker gets
-angrier the longer it lives. The Devourer is armoured and enraged and it has 78
-health.
+deals to you. Hexweaver drags one of your dice down to its worst face —
+Sunder's is the `rust` that deals nothing, Blade's is a plain 2. Berserker gets angrier
+the longer it lives. The Devourer is armoured and enraged and it has 78 health.
 
 A daily run
 
@@ -343,8 +640,9 @@ comparing.
 Your best run is saved
 
 Depth reached, runs played, victories kept. Your first three finished runs each
-unlock a die, so the next one starts with a fuller hand — past four, the only
-way wider is a New Die taken between fights. The run ends when your health does.
+unlock a die you can pick at the title — but a run always opens on four, so past
+four the only way wider is a New Die taken between fights. The run ends when your
+health does.
 
 One thumb, no menu
 
@@ -391,42 +689,65 @@ you are already playing.
       internally consistent. It is simply the pre-Phase-3 build. **Upload
       `dicefate.aab`.** Re-run `godot --headless --path . -s _pack.gd --
       Android` after any rebuild; it checks the export and boots the pack.
+      This is gate 5, and it is now in PLAN.md's gate loop too — run there as
+      well, because gates 1–4 run from source and cannot see an export filter
+      drop a file at all. It writes `/tmp/_pack_probe.pck`, so it needs a
+      writable `/tmp`; nothing in the repo is touched.
 
-      > **But it is five executable commits behind HEAD (corrected
-      > 2026-09-30, was "one"), and the upload should be a decision.**
+      > **But it is seven executable commits behind HEAD (corrected
+      > 2026-10-02, was "five" — which was itself corrected 2026-09-30 from
+      > "one"), and the upload should be a decision.**
       > `dicefate.aab` was built at **06:54:37**, sixteen minutes after Phase 3
-      > landed. Five commits after that build changed shipped code, across all
-      > three gameplay scripts:
+      > landed. Seven commits after that build changed shipped code, across all
+      > four gameplay scripts:
       >
       > | commit | what a player would not get |
       > |---|---|
       > | `79de3f5` | the touch-target fix — `custom_minimum_size` goes `0, 54` → larger |
       > | `73238fe` | three controls the ergonomics gate had never looked at |
       > | `d035c37` | the named boss threshold and the boss haptic |
-      > | `599baac` | item 7: Fang's top face, `18` → a `15` carrying `pierce 6` |
+      > | `599baac` | item 7: Fang's top face, `18` → a `15` carrying `pierce 6`, and the BEST HIT preview that was hiding its pierce |
       > | `d6b3073` | the SFX pool size, which had claimed headroom nothing checked |
+      > | `3b0d28a` | the ADD_DIE reward, which was inert for every player already holding all three bonus dice |
+      > | `87afe50` | the MEND reward, dealt at full health about a quarter of the time and worth nothing |
       >
       > `20fe68a` touches `game.gd` too but is 2 lines and comment-level.
       > The earlier version of this note said "one executable commit" and named
       > only item 7, which was true of `dice.gd` alone and wrong everywhere
-      > else: scoping the claim to one file is what hid the other four.
+      > else: scoping the claim to one file is what hid the other four at the
+      > time, and two more player-facing commits have landed since.
       >
-      > **Those five are five of TEN, and the other five are counted rather
-      > than quietly dropped, because `git log --since=<build> -- game.gd
-      > fight.gd dice.gd run.gd theme.gd main.tscn` returns all ten and stops
-      > you knowing which is which.** The other three are comment-only
+      > **Those seven are seven of THIRTEEN, and the other six are counted
+      > rather than quietly dropped, because `git log --since=<build> -- game.gd
+      > fight.gd dice.gd run.gd theme.gd main.tscn` returns all thirteen and
+      > stops you knowing which is which.** Three of the six are comment-only
       > rewrites — `20fe68a`, `acf1da9`, `ffc7d87`, at 2, 0 and 0 code lines.
       > `acf1da9` is the one most likely to be miscounted: its subject reads
       > "item 7's trigger rate was measured blind" and it touches `dice.gd`, but
       > its entire diff (`+14/-7`) is `##` prose. Judging by subject, or by
       > `+N/-M` on a diff that is mostly `##`, is how a note like this drifts —
-      > the count of five is only defensible against a measured split.
+      > the count of seven is only defensible against a measured split.
       >
-      > The two commits since (`8fdf773`, `642ed5d`) are 47 non-comment lines
-      > between them and still change nothing a player loads: every one is
-      > inside `RunState.self_test`, and `test.gd:24-25` is its only caller. So
-      > the player-facing gap has stayed at five across both, and measuring is
-      > the only way to know it is still five after the next one.
+      > The next two (`8fdf773`, `642ed5d`) are 47 non-comment lines between
+      > them and still change nothing a player loads: every one is inside
+      > `RunState.self_test`, and `test.gd:24-25` is its only caller, so the gap
+      > held at five across those. The three after them did not. `3b0d28a` and
+      > `87afe50` are both inside `roll_rewards` and both player-facing.
+      > `992f0a4` reads like a fix and is not one: its subject says the Golem's
+      > wall "has a ceiling", but its entire `dice.gd` diff is the new
+      > `_bank_budget_tests` plus that function's own comment, and its other two
+      > files are `shot.gd` and this note. It *measures* the wall, it does not
+      > change it. Counting its diff lines without applying the rule two
+      > paragraphs up — test-only commits change nothing a player loads — would
+      > have made the count eight.
+      >
+      > **The gap is a floor, not a total: the working tree is uncommitted.**
+      > The checkout's `dice.gd` carries a fix no commit has. Holding and then
+      > releasing the same die paid BASTION's 4 block on every tap and nothing
+      > anywhere capped `block`, so ten tap-pairs on one unspent die banked 40
+      > block inside a single turn. That is a gameplay change, it is player-
+      > facing, and it is not in `992f0a4` — so seven is what the committed
+      > history proves and the real distance is larger by at least one fix.
       >
       > **The touch-target row is the one that matters for a hardware pass.**
       > The artifact still carries `custom_minimum_size = Vector2(0, 54)`, the
@@ -467,9 +788,20 @@ you are already playing.
       correct only if nothing above it has ever been uploaded. Bump it and
       rebuild if in doubt; a rejected upload still counts as uploaded.
 - [ ] The listing ID `com.dicespike.game` is permanent once created.
-- [ ] `export_presets.cfg` holds the release keystore password in plaintext,
-      and this note said to gitignore it *before* `git init`. `git init` has
-      since happened and the password is in history at `088a3f1`. There is no
-      remote, so nothing has left the machine, but the fix is no longer "add a
-      line to `.gitignore`" — the value is in a commit. Rotate the key or drop
-      it to an env-var read before this repo goes anywhere.
+- [ ] **The release keystore password is published, not merely committed.**
+      `export_presets.cfg` holds it in plaintext at line 81
+      (`keystore/release_password`), and this note said to gitignore the file
+      *before* `git init`. `git init` has since happened. The password is in
+      history at `088a3f1`, and `088a3f1` is an ancestor of both
+      `refs/remotes/origin/main` and `refs/remotes/origin/master`, so **it is
+      on GitHub today** — at `github.com/locionic/make-games`.
+      An earlier version of this note said "There is no remote, so nothing has
+      left the machine". That was wrong, and it was the sentence that made this
+      look safe: it is the one a reader would have stopped at. Verified
+      2026-10-02 with `git remote -v` and `git merge-base --is-ancestor`.
+      **Rotate the key.** That is the only fix that helps — rewriting history
+      removes the copy from GitHub's reachable commits but leaves a live
+      signing credential in every clone, and any fork or cache keeps it.
+      Rotating first makes the published value inert; the history cleanup is
+      then just tidying. Reading it from an environment variable afterwards
+      stops the next commit re-publishing it.

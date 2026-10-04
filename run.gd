@@ -17,8 +17,30 @@ const Check = preload("res://_check.gd")
 ## inflated the real lifetime run/win counters.
 static var SAVE_PATH := "user://run.json"
 const FINAL_DEPTH := 8  ## fights at depth 0..7, the boss at FINAL_DEPTH
+
+
+## The depth as the player reads it: one-based, clamped to the run's length.
+##
+## `FINAL_DEPTH` is an index and every sentence about it is a number, and the two
+## kept drifting apart. The fight HUD said "depth 9 of 9", the death screen's
+## own summary said "You reached depth 9 of 9", and the line two below it said
+## "The Devourer waits at depth 8" -- the same fight, two numbers, on one
+## screen, because five of the six sites added one and the sixth did not. Every
+## display goes through here now, so the off-by-one has one definition to live
+## in and `self_test` has one value to pin.
+static func depth_no(d: int) -> int:
+	return clampi(d + 1, 1, FINAL_DEPTH + 1)
 const MAX_DICE := 6
 const POOL_SIZE := 4  ## dice in hand at the start of a run
+# These two are constants now because the store copy quotes both, and
+# `shot.gd`'s `_check_copy_claims` derives its rows from the constants that own
+# the behaviour. "one of three upgrades" and "your first three finished runs"
+# were hand-typed against bare `3`s, so moving either count left that row green
+# over a sentence that had quietly become false -- the one thing the gate's own
+# comment says it prevents. The unlock cap was a literal in two places and the
+# offer count in two more, none of them named.
+const OFFER_COUNT := 3  ## upgrades offered between fights
+const UNLOCK_CAP := 3  ## finished runs before the title picker widens
 
 var dice: Array = []  ## Array[Rules.Die] -- the pool the player fights with
 var hp: int = 20
@@ -71,7 +93,7 @@ static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
 ## finished run. Owning one is the reason to start the next run.
 static func owned_dice() -> Array:
 	var out: Array = Rules.Encounter.library()
-	var left: int = mini(int(load_stats().get("unlocked", 0)), 3)
+	var left: int = mini(int(load_stats().get("unlocked", 0)), UNLOCK_CAP)
 	for b in Rules.Encounter.bonus_dice():
 		if left <= 0:
 			break
@@ -187,16 +209,52 @@ func at_boss() -> bool:
 ## of "+1 to a face".
 
 const UPGRADES := [
-	{"id": "ADD_DIE", "name": "New Die", "desc": "Add a wild die to your pool."},
+	{"id": "ADD_DIE", "name": "New Die", "desc": "Add one of your unlocked dice."},
 	{"id": "SHARPEN", "name": "Sharpen", "desc": "Every damage face +1."},
 	{"id": "BLESS", "name": "Bless", "desc": "Every block face +1."},
 	{"id": "FOCUS", "name": "Focus", "desc": "+1 re-roll every turn."},
 	{"id": "VIGOR", "name": "Vigor", "desc": "+8 max health, and heal 8."},
 	{"id": "PIERCE", "name": "Piercing", "desc": "Your hits ignore 1 armour."},
-	{"id": "REFORGE", "name": "Reforge", "desc": "Raise your weakest die-face."},
+	# "your weakest die-face" promised the player's worst face across the whole
+	# hand. `apply_upgrade` picks a die with `rng.randi_range` and calls
+	# `forge()` on it, which raises *that die's* `worst_index()` face by 1 --
+	# so with four dice the globally weakest face is the one lifted one time in
+	# four, and a strong die can be drawn and have a face it already outclasses
+	# bumped instead. Same shape as PRECISE_STRIKE below: the code is right,
+	# the copy was promising more. Changed rather than the code, because the
+	# 4.7% pick rate BALANCE.md records is a measurement of the *code*, and
+	# correcting the text moves no number. "worst face" is `worst_index()`'s
+	# own word. Kept short on purpose: a reward Label has no autowrap
+	# (`game.gd:235`) and the card is a fixed 146px that will not grow for a
+	# longer one (`game.gd:516`), and `shot.gd`'s fit check only measures the
+	# three cards it stages -- PRECISE_STRIKE 66, BULWARK 49, ADD_DIE 30.
+	# The bound is PRECISE_STRIKE's 66. This comment used to name BULWARK's 49
+	# as "the longest string here with layout evidence behind it" while quoting
+	# that 66 in the same breath -- the shorter of two staged cards, by seventeen.
+	# The 66 also covers GAMBLERS_RUSH at 64, the longest card nothing stages,
+	# which `shot.gd`'s note on this same staging does name as the pool's next
+	# longest: two files, one subject, opposite answers.
+	# A first attempt read "Raise a random die's worst face.", 32 characters --
+	# inside the 66, so it fitted, and what it got wrong was never the width.
+	# "any die" carries the real correction: it is not *your* die, and it is not
+	# your weakest.
+	{"id": "REFORGE", "name": "Reforge", "desc": "Raise any die's worst face."},
 	{"id": "MEND", "name": "Mend", "desc": "Heal 14. It does not last."},
-	{"id": "BULWARK", "name": "Bulwark", "desc": "Reflect 4 damage when struck."},
-	{"id": "PRECISE_STRIKE", "name": "Precision Strike", "desc": "A hit of 10+ leaves it exposed: your hits on it count for half again."},
+	# "when struck" read as "when attacked", and thorns fire on `hit > 0` -- so
+	# an attack the player fully blocks reflects nothing. That is the right rule
+	# (there was no strike to reflect) and the wrong sentence: a player holding a
+	# Ward is doing the one thing that suppresses this card, and the card did not
+	# say so. Same shape as PRECISE_STRIKE below, and as `hurt.ogg`, whose note
+	# already says it fires only on damage that got *through* block. The code was
+	# left alone because the rule is defensible; only the promise was wrong.
+	{"id": "BULWARK", "name": "Bulwark", "desc": "Reflect 4 damage when hit. A full block stops it."},
+	# "for one turn" is not a restatement, it is the whole mechanic. The window is
+	# opened by the resolve that earns it and spent by the next one
+	# (`dice.gd:657` decrements it, `enemy.exposed = 1` at `dice.gd:662` sets it
+	# again), so the copy that said only "leaves it exposed" described a permanent
+	# debuff the code does not grant. Same shape as ADD_DIE's wild die: a card
+	# promising something the rules do not do.
+	{"id": "PRECISE_STRIKE", "name": "Precision Strike", "desc": "A 10+ hit exposes it for one turn; your hits count for half again."},
 	{"id": "GAMBLERS_RUSH", "name": "Gambler's Rush", "desc": "A re-roll that lands higher adds half the gain, ignoring armour."},
 	{"id": "BASTION_HOLD", "name": "Bastion Hold", "desc": "Holding a die gains 4 block at once."},
 ]
@@ -209,17 +267,28 @@ static func upgrade_by_id(id: String) -> Dictionary:
 	return UPGRADES[0]
 
 
-## A bonus die this run is not already holding. ADD_DIE appends one of these, so
-## when the list is empty the card has nothing to give. The offer and the
-## application have to ask that one question or the card gets dealt to a player
-## who can only spend a pick on nothing.
+## An owned bonus die this run is not already holding. ADD_DIE appends one of
+## these, so when the list is empty the card has nothing to give. The offer and
+## the application have to ask that one question or the card gets dealt to a
+## player who can only spend a pick on nothing.
+##
+## "Owned" is in there because the card's own copy says "your unlocked dice"
+## and the title picker draws the ones you have not earned as LOCKED. Asking
+## only `held` made this a second, silent source of bonus dice: a player on
+## their first run owns none at all, and was still dealt one -- from the same
+## list their own title screen was showing them as locked. The pick was spent
+## on a die they could not carry into the next run, because ownership is what
+## `set_loadout` reads and not what the fight reads.
 func unheld_bonus_dice() -> Array:
 	var held: Array = []
 	for d in dice:
 		held.append(d.title)
+	var owned: Array = []
+	for d in owned_dice():
+		owned.append(d.title)
 	var out: Array = []
 	for b in Rules.Encounter.bonus_dice():
-		if not held.has(b.title):
+		if owned.has(b.title) and not held.has(b.title):
 			out.append(b)
 	return out
 
@@ -259,7 +328,7 @@ func roll_rewards(rng: RandomNumberGenerator) -> Array:
 		pool.append(u)
 	var picks: Array = []
 	var bag := pool.duplicate()
-	while picks.size() < 3 and not bag.is_empty():
+	while picks.size() < OFFER_COUNT and not bag.is_empty():
 		var i := rng.randi_range(0, bag.size() - 1)
 		picks.append(bag[i])
 		bag.remove_at(i)
@@ -359,7 +428,7 @@ static func record_run(depth_reached: int, victory: bool, loadout: Array = []) -
 	stats["runs"] = int(stats["runs"]) + 1
 	if victory:
 		stats["wins"] = int(stats["wins"]) + 1
-	stats["unlocked"] = mini(int(stats["unlocked"]) + 1, 3)
+	stats["unlocked"] = mini(int(stats["unlocked"]) + 1, UNLOCK_CAP)
 	if not loadout.is_empty():
 		stats["loadout"] = loadout
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -482,6 +551,35 @@ func _focus_biggest_gap(enc: Rules.Encounter) -> void:
 		enc.focus_die(best)
 
 
+## The store copy's "your first three finished runs each unlock a die". Read as
+## a sentence about the *hand*, it is false, and it was false in the block until
+## this round: the copy said the unlock meant "the next one starts with a fuller
+## hand", while four lines later the same block said the only way past four is
+## a New Die taken mid-run. Both cannot hold. The one that was wrong is the first.
+##
+## What unlocking actually does is widen `owned_dice()`, and `set_loadout` trims
+## whatever it is handed to POOL_SIZE and tops it back up from the library -- so
+## the starting hand is four on every run, forever, and a die you have earned is
+## a die you can *pick* at the title screen, not one that is dealt to you. The
+## picker agrees: `game.gd` refuses to add past POOL_SIZE and renders
+## `pool.size() / POOL_SIZE`, so no path through the game opens a run wider than
+## four. Widened mid-run is a different thing and is exactly what a New Die
+## does, up to MAX_DICE -- so the clause needs "opens ... than four" to be true,
+## and the bare "wider" was not: it is the reading this block exists to refute.
+##
+## Two checks, and the order matters. The first is liveness: at the point this
+## runs, four `record_run` calls have already taken `unlocked` to its cap, so
+## `owned_dice()` really is longer than a hand. Without it the second check
+## passes on a build where unlocking is broken outright -- seven dice owned
+## failing to become six would still open on four -- which is the
+## check-that-cannot-fail this repo keeps refusing to write.
+static func _check_fuller_hand_claim() -> void:
+	Check.check(owned_dice().size() > POOL_SIZE,
+		"the three unlocks did land, so the hand-width check below is not vacuous")
+	Check.check(new().dice.size() == POOL_SIZE,
+		"and a fresh run still opens on exactly POOL_SIZE dice, unlocks or not")
+
+
 static func self_test() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 99
@@ -497,6 +595,20 @@ static func self_test() -> void:
 		var e := r.enemy_for(d)
 		Check.check(e.hp > 0, "every enemy has health")
 
+	# The depth the player reads, which is not the depth the game indexes. Six
+	# sites in `game.gd` printed a depth and five of them added one -- so the
+	# death screen said "You reached depth 9 of 9" and, two lines below,
+	# "The Devourer waits at depth 8", for the same fight. Both halves pinned:
+	# the mapping is one-based, and it cannot run past the end of the run.
+	Check.check(depth_no(0) == 1, "the first fight reads as depth 1, not depth 0")
+	Check.check(depth_no(FINAL_DEPTH) == FINAL_DEPTH + 1,
+		"the boss reads as the ninth fight, not as its index (%d)" % FINAL_DEPTH)
+	for d in FINAL_DEPTH + 1:
+		Check.check(depth_no(d) == d + 1,
+			"depth %d reads as %d" % [d, d + 1])
+	Check.check(depth_no(FINAL_DEPTH + 1) == FINAL_DEPTH + 1,
+		"and a run past the boss still reads as the ninth, not a tenth")
+
 	# The roster as play/LISTING.md describes it, clause by clause. The store
 	# copy is the one surface Play indexes and none of it was checkable, which
 	# is how it came to sell a daily that seeded the wrong thing. These are the
@@ -505,7 +617,7 @@ static func self_test() -> void:
 	for claim in [
 		[1, "Rust Golem", Rules.Enemy.BEH_ARMOR_GROW, "grows its armour every turn"],
 		[2, "Bloodletter", Rules.Enemy.BEH_LIFESTEAL, "heals off what it deals to you"],
-		[3, "Hexweaver", Rules.Enemy.BEH_CURSE, "curses one of your dice to nothing"],
+		[3, "Hexweaver", Rules.Enemy.BEH_CURSE, "drags one of your dice down to its worst face"],
 		[7, "Berserker", Rules.Enemy.BEH_ENRAGE, "gets angrier the longer it lives"],
 	]:
 		var depth: int = claim[0]
@@ -517,6 +629,102 @@ static func self_test() -> void:
 	Check.check(boss.hp == 78, "the boss has the 78 health the description gives it (%d)" % boss.hp)
 	Check.check(boss.armor > 0 and boss.behavior == Rules.Enemy.BEH_ENRAGE,
 		"and it is armoured and enraged, as described")
+
+	# The store's Hexweaver clause was "curses one of your dice to nothing", and
+	# it was false for three of the four library dice. `Dice.Encounter._curse_one`
+	# picks a die at random and drops it on *that die's* lowest-`worth()` face --
+	# Blade's is a 2, Ward's a 2 that blocks instead of striking, Hex's a 1 -- and
+	# only Sunder's is a nothing, because Sunder is the one die carrying `rust`.
+	# Measured rather than read: the version of this check that asserted the
+	# clause as written failed on exactly those three.
+	#
+	# The copy now says the true thing, and this is the line that goes red if a
+	# rebalance ever made the overclaim true -- which is the signal to change the
+	# sentence, not the dice.
+	var junk := 0
+	for die in Rules.Encounter.library():
+		if die.faces[die.worst_index()].is_junk():
+			junk += 1
+	Check.check(junk < Rules.Encounter.library().size(),
+		"the Hexweaver clause must not say \"curses one of your dice to nothing\": "
+			+ "the curse lands on a die's own worst face and only %d of the %d library "
+			% [junk, Rules.Encounter.library().size()]
+			+ "dice have one that is nothing")
+
+	# "upgrades change your dice, not a stat bar" was the store's sentence, and two
+	# of the twelve contradict it: VIGOR writes `max_hp += 8; hp += 8` and MEND
+	# writes `hp = mini(hp + 14, max_hp)`. Counted by applying every card to a
+	# fresh run rather than by reading the arms, because the arms are twelve
+	# `match` cases and the copy's claim is about all twelve at once -- and
+	# reading them is how the sentence survived.
+	var hp_cards := 0
+	for card in UPGRADES:
+		var c := new()
+		## Wounded on purpose: a full-health MEND is capped at `max_hp` and would
+		## look identical to a card that does nothing.
+		c.hp = 10
+		c.max_hp = 20
+		c.apply_upgrade(card["id"], RandomNumberGenerator.new())
+		if c.hp > 10 or c.max_hp > 20:
+			hp_cards += 1
+	Check.check(hp_cards == 2,
+		"the store copy may not claim upgrades never touch a stat bar: %d of the twelve "
+			% hp_cards + "cards move hit points (MEND and VIGOR)")
+
+	# The boss's title already carries its own article -- "The Devourer" -- and
+	# three log lines added one of their own, so a run's last fight opened with
+	# "A The Devourer blocks your path." and could end with "The The Devourer
+	# falls." Every other line in `resolve_faces` and `take_turn` prints the bare
+	# title, which is why these three only showed up on re-reading.
+	#
+	# Driven over the whole roster rather than at the boss, because what makes it
+	# reachable is a *title* that starts with an article and that is a property
+	# any of the nine could pick up. Three sites, because a fight has one opening
+	# and two endings -- the resolve that lands the killing blow, and the thorns
+	# on the enemy's own turn. Both endings were reachable: thorns is a card, and
+	# the boss enrages to an attack past any block a first run has.
+	for d in FINAL_DEPTH + 1:
+		var rd := new()
+		rd.depth = d
+		var enc := rd.start_fight()
+		Check.check(enc.log_lines[0] == "%s blocks your path." % enc.enemy.title,
+			"depth %d opens with \"%s\" -- every other line in the fight prints the bare "
+				% [d, enc.log_lines[0]] + "title, and one that already carries an "
+				+ "article must not be given another")
+		enc.enemy.hp = 1
+		enc.roll_all(RandomNumberGenerator.new())
+		enc.dice[0].up = 5  ## Blade 9, which is through every armour in the table
+		enc.resolve_faces()
+		Check.check(enc.log_lines[-1] == "%s falls." % enc.enemy.title,
+			"depth %d ends with \"%s\" -- the same doubling, on the killing blow"
+				% [d, enc.log_lines[-1]])
+		var rd2 := new()
+		rd2.depth = d
+		var te := rd2.start_fight()
+		te.thorns = 999  ## every enemy answers, so this line is the last one it writes
+		te.take_turn(RandomNumberGenerator.new())
+		Check.check(te.log_lines[-1] == "%s dies to your thorns." % te.enemy.title,
+			"depth %d ends with \"%s\" on the thorns kill -- the third site"
+				% [d, te.log_lines[-1]])
+
+	# The roster's armour shape, which nothing pinned. `_balance.gd:184` argued
+	# the roster is what makes sunder near-universal, and it did that on two
+	# counts -- "seven of nine" armoured and "two of them" able to grow into the
+	# cap -- and both were wrong. Counted over every depth rather than asserted
+	# per enemy so a daily's shuffle cannot move them: `order` permutes the same
+	# nine, so the totals are the totals whichever order the run took.
+	var armoured := 0
+	var growing := 0
+	for d in FINAL_DEPTH + 1:
+		var foe := r.enemy_for(d)
+		if foe.armor > 0:
+			armoured += 1
+		if foe.behavior == Rules.Enemy.BEH_ARMOR_GROW \
+				or foe.behavior == Rules.Enemy.BEH_BRACE:
+			growing += 1
+	Check.check(armoured == 8, "eight of the nine enemies carry armour, measured %d" % armoured)
+	Check.check(growing == 3, "and three can grow into the %d armour cap, measured %d"
+		% [Rules.Enemy.ARMOR_GROW_CAP, growing])
 
 	# A daily is the same run for everyone on that day, and never lets the boss
 	# out early. Same seed, same enemy order, opener included.
@@ -664,14 +872,69 @@ static func self_test() -> void:
 
 	r.apply_upgrade("REFORGE", rng)
 	Check.check(r.upgrades.has("REFORGE"), "REFORGE is recorded")
+	# ...and that is all the line above asserted: the id was recorded, not that a
+	# die changed. `forge()` is tested on a bare die in `dice.gd` ("forge raises
+	# the weakest face by one"), so what was untested is the wiring -- that the
+	# arm reaches a face of a die in *this*
+	# hand. Measuring a delta across a second application pins the effect and
+	# the "one face, by one" the card text now promises at the same time, and
+	# it is a delta because the arm draws a random die: the arm can only pass by
+	# forging exactly one face of exactly one die, so passing by forging none, or
+	# by forging two, both go red.
+	var forged0 := 0
+	for d in r.dice:
+		for f in d.faces:
+			forged0 += f.dmg
+	r.apply_upgrade("REFORGE", rng)
+	var forged1 := 0
+	for d in r.dice:
+		for f in d.faces:
+			forged1 += f.dmg
+	Check.check(forged1 == forged0 + 1,
+		"REFORGE raises exactly one face of one die by one")
 
 	var mh1 := r.max_hp
 	r.hp = 1
 	r.apply_upgrade("MEND", rng)
 	Check.check(r.hp == 15 and r.max_hp == mh1, "MEND heals without touching the pool")
 
-	# Every card in the table is applied and recorded. A copy-paste slip that
-	# adds a description without an arm shows up here rather than as a dead pick.
+	# The card copy quotes three magnitudes that live in constants, and **nothing
+	# bound them.** The checks above pin the *effects* — `thorns` is four more, a
+	# die's face rose by one — but not one check anywhere read a `desc`, so moving
+	# a constant left the sentence on screen quietly untrue and every gate green.
+	# REFORGE was this same defect found by reading: "your weakest die-face"
+	# promised a global worst face the code does not pick.
+	#
+	# Only the magnitudes whose number is *derivable* are listed. The other seven —
+	# SHARPEN's +1, BLESS's +1, VIGOR's 8, MEND's 14, BULWARK's 4, FOCUS's +1,
+	# PIERCE's 1 — are each the same literal typed twice, once in `apply_upgrade`
+	# and once in the card, so there is nothing for a check to read the value out
+	# *of*. (ADD_DIE and REFORGE are the other two and quote no tunable number.)
+	# A check that hardcoded the number instead would be a second copy with
+	# nothing to propagate it, which is the defect wearing a check's clothes.
+	# Binding those means hoisting each literal into a constant and adding it to
+	# `derived` below; that is a code change, so it is named rather than made.
+	var derived := {
+		"BASTION_HOLD": "gains %d block at once" % Rules.Encounter.BASTION_BLOCK,
+		"PRECISE_STRIKE": "A %d+ hit" % Rules.Encounter.EXPOSE_AT,
+	}
+	for id in derived:
+		Check.check(upgrade_by_id(id)["desc"].contains(derived[id]),
+			"the %s card quotes the constant that implements it (%s)" % [id, derived[id]])
+	# "half" is not a number in the copy, so this row asserts the promise instead
+	# of restating it: RUSH_SHARE is what "half" means, and the card reads
+	# `rushed / RUSH_SHARE`.
+	Check.check(Rules.Encounter.RUSH_SHARE == 2,
+		"GAMBLERS_RUSH says \"half the gain\", and half is 2")
+
+	# Every card in the table is applied and recorded. This loop cannot be what
+	# catches a copy-paste slip that adds a description without an arm, and the
+	# comment here used to say it was: `apply_upgrade` appends the id on its
+	# first line, before the `match`, and the `match` has no default arm, so a
+	# card with no arm is recorded and does nothing and this check still passes.
+	# Deleting BULWARK's arm and BASTION_HOLD's arm in turn leaves this loop
+	# green both times; what goes red is the per-card checks above and below
+	# ("BULWARK reflects damage", "%s carries its flag"). Those are the backstop.
 	for u in UPGRADES:
 		var probe := new()
 		probe.apply_upgrade(str(u["id"]), rng)
@@ -683,7 +946,8 @@ static func self_test() -> void:
 		full.apply_upgrade("ADD_DIE", rng)
 	Check.check(full.dice.size() == MAX_DICE, "pool caps at MAX_DICE")
 	var offers := full.roll_rewards(rng)
-	Check.check(offers.size() == 3, "always three offers")
+	Check.check(offers.size() == OFFER_COUNT,
+		"always %d offers, which is what the store copy quotes" % OFFER_COUNT)
 	var ids := {}
 	for o in offers:
 		ids[o["id"]] = true
@@ -725,6 +989,42 @@ static func self_test() -> void:
 		"so ADD_DIE is never offered -- 60 draws of three, and it appeared %d times"
 		% nadd)
 
+	# ...and the copy, which is a different question. "Add one of your unlocked
+	# dice" claims *which* dice the card may hand over, and nothing asserted it:
+	# the block above asks whether the card is offered when there is nothing to
+	# give, and never asks what it gives. Both ends are pinned on a temp save
+	# rather than reasoned about, because the ambient save already has every
+	# bonus die unlocked -- a check built on `r` passes whether or not the
+	# ownership filter exists, which is how this stayed invisible. The temp save
+	# is the only way to reach the case the sentence is about: a player who owns
+	# none of them.
+	var own_path := SAVE_PATH
+	SAVE_PATH = "user://self-test-new-die.json"
+	for case in [[0, "a first run, which owns no bonus die"],
+			[UNLOCK_CAP, "every bonus die owned"]]:
+		var cf := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+		cf.store_string(JSON.stringify({"unlocked": int(case[0])}))
+		cf.close()
+		var owned: Array = []
+		for d in owned_dice():
+			owned.append(d.title)
+		var nd := new()
+		nd.set_loadout(["Blade", "Sunder", "Ward", "Hex"])
+		var before: int = nd.dice.size()
+		nd.apply_upgrade("ADD_DIE", rng)
+		var strays: Array = []
+		for d in nd.dice:
+			if not owned.has(d.title):
+				strays.append(d.title)
+		Check.check(strays.is_empty(),
+			"New Die hands over nothing the player does not own (%s)" % case[1])
+		Check.check(nd.dice.size() == before + (0 if int(case[0]) == 0 else 1),
+			"and grows the pool only when an unlocked die is left to add (%s)"
+			% case[1])
+	SAVE_PATH = own_path
+	DirAccess.remove_absolute(
+		ProjectSettings.globalize_path("user://self-test-new-die.json"))
+
 	# MEND is the same defect in different clothes, and more common: a card with
 	# no clamp, offered right after absorb, so a perfectly blocked fight deals
 	# Heal 14 to a full-health player who can only spend the pick on it. 24% of
@@ -750,7 +1050,7 @@ static func self_test() -> void:
 	Check.check(m_full == 0,
 		"and never at full health, where Heal 14 is worth nothing -- it appeared %d times"
 		% m_full)
-	Check.check(ids.size() == 3, "offers are distinct")
+	Check.check(ids.size() == OFFER_COUNT, "offers are distinct")
 
 	# Persistence round-trips through user://run.json.
 	record_run(3, false)
@@ -772,16 +1072,37 @@ static func self_test() -> void:
 	# pass on a build with no cap at all -- the one sort of check that is worse
 	# than none, because it looks like the cap is covered.
 	record_run(1, false)
-	Check.check(int(load_stats()["unlocked"]) == 3,
-		"a fourth finished run unlocks nothing -- the count is still 3")
+	Check.check(int(load_stats()["unlocked"]) == UNLOCK_CAP,
+		"a fourth finished run unlocks nothing -- the count is still %d" % UNLOCK_CAP)
 	Check.check(Rules.Encounter.bonus_dice().size() == 3,
 		"and there are only three to unlock in the first place")
+
+	# The last two fields of the save, and the only two with a reader and no
+	# assertion: `runs` is the number the title screen prints and what flips
+	# the Play button from "Begin the run" to "Play" (the `"%d runs   ·   %d
+	# victories"` label, and the `primary_button("Play" if ...)` beside it),
+	# and `loadout` is what `saved_loadout()` hands every run at `run.gd:71`
+	# -- inside `_init`, so it is read on every single RunState, not on some
+	# opt-in path. A delta, not a count: five `record_run` calls now sit in
+	# this function and an absolute total goes stale the moment a sixth is
+	# added, which is the drift this audit keeps finding.
+	var runs_before := int(load_stats()["runs"])
+	record_run(1, false, ["Blade"])
+	var replayed := load_stats()
+	Check.check(int(replayed["runs"]) == runs_before + 1,
+		"a finished run is counted exactly once")
+	Check.check(replayed.get("loadout", []) == ["Blade"],
+		"and the hand it was played with survives the round trip")
+	Check.check(new().saved_loadout() == ["Blade"],
+		"and comes back out as the next run's starting hand")
+
 	var hand := new()
 	hand.set_loadout(["Blade", "NotADie", "AlsoFake"])
 	Check.check(hand.dice.size() == POOL_SIZE, "a bad loadout still fills the hand")
 	Check.check(hand.dice[0].title == "Blade", "and keeps the titles it could use")
 	hand.set_loadout(owned_titles())  # everything owned, which is more than a hand
 	Check.check(hand.dice.size() == POOL_SIZE, "an oversized loadout is trimmed to a hand")
+	_check_fuller_hand_claim()
 	Check.check(hand.share_text(4, true).contains("Depth 4 of 9"), "a free run reports depth")
 
 	# Difficulty: a dumb bot clears the run sometimes and never trivially.

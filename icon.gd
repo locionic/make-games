@@ -1,7 +1,7 @@
 extends SceneTree
-## Throwaway image generator, not part of the game. Writes every image the
-## project ships, all drawn in code so a fresh checkout can produce them:
-##   xvfb-run -a godot --path . --rendering-driver opengl3 -s icon.gd
+## Throwaway image generator, not part of the game. Draws both images the
+## project ships, all in code -- but see the guard in `_run` before running it:
+##   xvfb-run -a godot --path . --rendering-driver opengl3 -s icon.gd -- --overwrite
 ## res://icon.png is the launcher icon -- the only image inside the APK. The
 ## one under res://play/ is Google Play's feature graphic, which is store art
 ## and sits behind a .gdignore so it never reaches the player. Re-run this
@@ -20,6 +20,24 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Writing is not the default. Both files below were replaced with generated
+	# art on 2026-09-29 and `res://icon.png` is the one image inside the APK, so
+	# running this the way the header above used to read -- and the way anyone
+	# would run it once, out of habit -- silently swaps it for a die drawn in
+	# code. The `*.bak-flat` files cannot undo that: they are the near-flat
+	# originals the generated art replaced, 8.4 KiB and 17.3 KiB, so restoring
+	# from them undoes the *replacement* rather than the accident. Only git
+	# history holds the generated art.
+	#
+	# So the flag is the point, not ceremony: one documented command, and the
+	# documented command now needs the reader to have decided to write.
+	if not OS.get_cmdline_user_args().has("--overwrite"):
+		print("icon.gd: wrote nothing. Pass --overwrite to replace res://icon.png "
+			+ "and res://play/feature.png:\n  xvfb-run -a godot --path . "
+			+ "--rendering-driver opengl3 -s icon.gd -- --overwrite")
+		quit()
+		return
+
 	# The one image the game ships. The launcher scales it to 48px, so it is
 	# drawn large and centred. Alpha is required here -- 32-bit PNG.
 	var icon := await _render(Vector2i(ICON, ICON), false)
@@ -96,10 +114,20 @@ func _draw_die(die: Control, size: Vector2i, wordmark: bool) -> void:
 
 
 ## A flat rounded card -- the same shape `theme.gd` gives every die in a fight.
+##
+## `border` is a fraction of the die's side, and 0 means no border, which the
+## drop shadow needs: it is a black box and nothing else. The floor of 1 that
+## used to sit here made that argument unreachable, so the shadow came out with
+## a one-pixel `GOLD_DARK` hairline under the die -- which is not the same
+## thing as a soft shadow, and is measurably there: at the bottom of the die in
+## `icon.png` the strip reads +39 on red-minus-blue where a 50% black shadow
+## over that backdrop would read about -4, and it decays over ten pixels
+## because the viewport filter smears the line. Roughly one pixel once the
+## launcher scales the icon to 48, so nobody would ever have reported it.
 func _box(fill: Color, radius: float, border: float, side: float) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = fill
 	sb.set_corner_radius_all(int(side * radius))
-	sb.set_border_width_all(maxi(int(side * border), 1))
+	sb.set_border_width_all(int(side * border))
 	sb.border_color = T.GOLD_DARK
 	return sb

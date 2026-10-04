@@ -9,11 +9,22 @@ extends SceneTree
 const Rules = preload("res://dice.gd")
 const RunState = preload("res://run.gd")
 const T = preload("res://theme.gd")
-var SAVE := RunState.SAVE_PATH  ## `var`, not `const`: SAVE_PATH is a static var, and a
-## static var is not a constant expression, so `const SAVE := RunState.SAVE_PATH`
-## fails to parse -- and a failed load still hands back a non-null script, so the
-## parse check in test.gd has to reload() rather than just load().
-const BACKUP := "/tmp/dice-save-backup.json"
+## The player's save is never staged, moved, or copied. It used to be, and that
+## was measured to be unsafe in the one way that costs the player data. Six
+## instances at once produced `Failed to open /tmp/dice-save-backup.json` with
+## the save-mute checks red beside it, because a *fixed* path cannot tell an
+## in-flight backup from a dead one -- run B read run A's live backup as a
+## leftover, deleted it, and left A's restore to open a file that was gone.
+##
+## Putting the pid in the path closed that race and nothing else. What it bought
+## was a window instead: between the delete and the restore, a crash takes the
+## save with it. `_rects.gd` staged the same way and is now fixed the same way
+## -- both tools redirect the path and delete nothing -- so there is no window
+## at all rather than a narrow one. See `_run()`.
+##
+## The `var`-not-`const` note that used to sit here went with the variables it
+## described. That is not a loss: a member initializer reading a static var is
+## error 43 at load, and gate 1 turns that into a one-line headless failure.
 ## Google Play wants 2-8 phone screenshots; this writes the whole flow at 540x960
 ## (9:16, and inside Play's 320px floor) so the listing is a copy, not a shoot.
 ## Under `res://play/`, which carries a .gdignore, so none of this is imported
@@ -40,15 +51,23 @@ func _init() -> void:
 
 
 func _run() -> void:
-	# Stage the save. It is a real file the player owns, not scratch -- so copy
-	# it out first and put it back before quitting.
-	var had_save := FileAccess.file_exists(SAVE)
-	if had_save:
-		DirAccess.copy_absolute(SAVE, BACKUP)
-	elif FileAccess.file_exists(BACKUP):
-		DirAccess.remove_absolute(BACKUP)  ## left over from an earlier run
-	if FileAccess.file_exists(SAVE):
-		DirAccess.remove_absolute(SAVE)
+	# Point the save somewhere harmless rather than moving the real one. What
+	# this file needs is a *fresh* profile -- the store art says "Begin the run"
+	# over an empty stats line, and a player with runs on their record gets
+	# different text -- so the scratch file is removed first rather than merely
+	# redirected. It is scratch: nothing here can reach `user://run.json`, and
+	# nothing outside this line writes outside the project.
+	#
+	# This check replaces one that asserted the backup path carried its pid, and
+	# it is a 1:1 swap so the floor below is unchanged and stays measured. It
+	# reads the value the remove and every later write actually use, so a source
+	# grep cannot satisfy it, and it pins a stronger invariant than the old one:
+	# that one could only say "unique", this says "not yours".
+	RunState.SAVE_PATH = "user://shot-scratch.json"
+	if FileAccess.file_exists(RunState.SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(RunState.SAVE_PATH))
+	_check(RunState.SAVE_PATH == "user://shot-scratch.json",
+		"this run saves to the scratch file and never to the player's (got %s)" % RunState.SAVE_PATH)
 
 	var game = load("res://main.tscn").instantiate()
 	root.add_child(game)
@@ -56,8 +75,9 @@ func _run() -> void:
 	_grab(1, "title-first-launch", SPARE)  ## first launch: the three bonus dice are still locked
 
 	# The mute button has to round-trip: press, the bus mutes and the choice is
-	# written; press again, it unmutes. The save is staged from scratch here, so
-	# this writes to the scratch file and the real one is restored at the end.
+	# written; press again, it unmutes. That round-trips through the scratch
+	# file set above, so it writes nothing the player owns and nothing is put
+	# back afterwards.
 	var mb: Button = game._mute_btn
 	_check(mb != null, "the game has a mute button")
 	_check(not AudioServer.is_bus_mute(0), "the game starts audible")
@@ -340,9 +360,15 @@ func _run() -> void:
 	# Forced, not rolled. A store screenshot has to be the same file every run
 	# and the 1-of-3 offer is random, so this shot used to be a different PNG
 	# each time. It also carries PRECISE_STRIKE on purpose: its description is
-	# nearly twice the next longest in the pool, and a reward label has no
-	# autowrap, so an overlong one runs off the card and off the screen with
-	# nothing to say so.
+	# the longest in the pool, and a reward label has no autowrap, so an overlong
+	# one runs off the card -- the check at the end of this block catches it, and
+	# the note there says how. Which it was, by a margin: this said "nearly twice
+	# the next longest in the pool" and the next longest is GAMBLERS_RUSH at 64
+	# characters against PRECISE_STRIKE's 66. The reason the card is here still
+	# holds; the number justifying it did not -- and it had drifted the same way
+	# once already, reading 69 for a description that is 66. `run.gd`'s note on
+	# the card-length bound contradicted this one over which staged card was the
+	# longest; both are corrected to 66 and to this file's own GAMBLERS_RUSH.
 	var offers: Array = []
 	for id in ["PRECISE_STRIKE", "ADD_DIE", "BULWARK"]:
 		offers.append(RunState.upgrade_by_id(id))
@@ -352,12 +378,25 @@ func _run() -> void:
 	_check(cards.size() == 3, "the reward screen offers exactly three cards")
 	for c in cards:
 		var box: Rect2 = c.get_global_rect()
+		var where := _label_rects(c)
 		for l in c.find_children("*", "Label", true, false):
 			var lr: Rect2 = l.get_global_rect()
 			_check(lr.position.x >= box.position.x and lr.end.x <= box.end.x,
 				"'%s' fits inside its card horizontally" % l.text)
+			# The rect is not the text, and this is why that still works. A Label
+			# with no autowrap wants the full width of its words, and `stack` is a
+			# Container -- so Godot clamps *it* up to that minimum, the two labels
+			# inside widen with it, and they leave the card. Same clamp that pinned
+			# the card's height this morning, running sideways. An earlier version
+			# of this line read "a Label with no autowrap is sized by its container,
+			# so the rect check cannot see it" and added a `get_combined_minimum_size`
+			# comparison beside it; that comparison can never fail, because the clamp
+			# has already made `size.x` equal the minimum by the time it runs. It was
+			# proved by appending 62 characters to PRECISE_STRIKE and watching the
+			# rect check fire and the new one stay silent.
 			_check(lr.position.y >= box.position.y and lr.end.y <= box.end.y,
-				"'%s' fits inside its card vertically" % l.text)
+				"'%s' fits inside its card vertically (card %s holds %s)"
+					% [l.text, str(box), where])
 	_ergonomics(game, "reward")
 	_grab(5, "reward-pick-one")
 
@@ -397,7 +436,11 @@ func _run() -> void:
 	# armour is a permanent fact about the enemy and Exposed is a one-turn window
 	# the player has to spend. Sharing the muted grey would make the one thing
 	# worth acting on look like the two things that are not. The tag is
-	# capitalize()d on the way out, so the words are matched capitalised too.
+	# sentence-cased on the way out -- first character only -- so the words are
+	# matched with their first letter up and the rest left alone. That is NOT
+	# `String.capitalize()`, which is title case in Godot 4 and turned the
+	# behaviour name "curses a die" into "Curses A Die" on screen; test.gd's
+	# `_enemy_tag` guards that half, this guards the rendered result.
 	_check(plated.enemy_tag.text.find("Exposed") == -1, "no Exposed tag before it is exposed")
 	_check(plated.enemy_tag.get_theme_color("font_color") == T.MUTED,
 		"armour is stated in the muted colour, like every other permanent fact")
@@ -410,6 +453,37 @@ func _run() -> void:
 		"and it does not replace the armour reading")
 	_check(plated.enemy_tag.get_theme_color("font_color") == T.GOLD,
 		"in gold, the colour everything else uses for live-and-act-on-it")
+	# The behaviour half of the same line, which the Exposed/Armour searches
+	# cannot see: those match one-word tags, and one word reads the same under
+	# sentence case and under title case. This is the only place the finished
+	# string exists -- `enemy_tag.text` is set in `_refresh`, which needs the
+	# mounted panel -- so it is asserted here and nowhere else.
+	#
+	# Depth 0 is the Grunt, `BEH_NONE`, whose `behavior_name()` is "". The
+	# first enemy that says anything is depth 1, the Rust Golem: "hardens each
+	# turn", which title case rendered as "Hardens Each Turn".
+	# The behaviour half of the same line, which the Exposed and Armour searches
+	# cannot see: those match one-word tags, and one word reads identically under
+	# sentence case and under title case. `enemy_tag.text` is only ever set in
+	# `_refresh`, which needs the mounted panel, so this is the only place the
+	# finished string can be observed at all.
+	#
+	# `_on_play` opened a run at depth 0, so this enemy is the Grunt -- `BEH_NONE`,
+	# `behavior_name()` "" -- and its tag carries no behaviour name to check. The
+	# armour and exposed tags cannot stand in: "Armour 12   Exposed" is the same
+	# string either way. So lend it the Golem's behaviour for the assertion and
+	# put it back, rather than leave the screenshot showing something the PNG on
+	# disk does not. Not executed by any gate I can run here: `test.gd` loads this
+	# file to assert it parses and never calls its checks.
+	var saved_behavior: int = plated.enc.enemy.behavior
+	plated.enc.enemy.behavior = Rules.Enemy.BEH_ARMOR_GROW
+	plated._refresh()
+	await _settle()
+	_check(plated.enemy_tag.text.find("Hardens each turn") != -1,
+		"the behaviour name reaches the screen in sentence case, not title case")
+	plated.enc.enemy.behavior = saved_behavior
+	plated._refresh()
+	await _settle()
 	_grab(8, "fight-armoured")
 
 	# The impact frame. Every grab above photographs the fight at rest, and the
@@ -450,7 +524,7 @@ func _run() -> void:
 	#
 	# "First face that deals nothing" is a no-op on a die that has no such face,
 	# and the pool can hold two: Blade deals 2-9 and Hex 1-6, so neither has one.
-	# It does not bite here only because the staged save's loadout is Blade,
+	# It does not bite here only because the scratch save's loadout is Blade,
 	# Sunder, Ward, Riposte, and Riposte opens on "fend". Swap that save for one
 	# carrying Hex and the loop stops pinning it, the exact totals above start
 	# failing on a coin flip, and the cause is four lines below where anyone would
@@ -545,6 +619,17 @@ func _run() -> void:
 	# file's own rule is that "a check that passes because nothing happened is
 	# worse than no check", and here there was no check at all.
 	#
+	# "Not in test.gd" was true when written and stopped being true when
+	# `test.gd::_haptics_wired` was added. It now asserts three things about
+	# the haptic half -- three call sites survive, a heavy hit buzzes harder
+	# than a light one, and a boss buzzes differently from an ordinary enemy.
+	# It reads the source text rather than running the calls, because `_haptic`
+	# is gated on `OS.has_feature("mobile")` and cannot execute anywhere in
+	# this repo, so of the five call sites the two shake sites are sampled by
+	# *running* this file and the three haptic ones are counted by *reading*
+	# one. No gate here has ever executed a vibration, and this paragraph used
+	# to claim a flat zero for a file that now has three checks.
+	#
 	# What is worth proving is specific. `shake()` tweens `position` on
 	# `shake_root`, and that is a `MarginContainer` carrying `PRESET_FULL_RECT`.
 	# On an anchored Control, writing `position` moves the left edge and leaves
@@ -603,7 +688,7 @@ func _run() -> void:
 	# ate, block, and status. The first two are asserted above; the block float is
 	# not, for the reason written there; and the fourth had neither a check nor a
 	# note. It is the one number in the list that nothing in the repo would have
-	# noticed disappearing -- `fight.gd:511` could be deleted and every gate
+	# noticed disappearing -- `fight.gd:630` could be deleted and every gate
 	# below would still be green.
 	#
 	# It cannot ride along on the fixture above, because exposure needs a face of
@@ -611,13 +696,13 @@ func _run() -> void:
 	# Blade can show -- so the branch is unreachable there by construction, not
 	# by luck. Sunder reaches 14. This is therefore a second resolve on the same
 	# panel, and `precision` -- the PRECISE_STRIKE card, the only thing that ever
-	# opens the window (dice.gd:1138) -- is what makes the 10+ mean anything.
+	# opens the window (dice.gd:662) -- is what makes the 10+ mean anything.
 	#
 	# It runs after the grab and after the shake rather than inside the fixture,
 	# because both of those are about *that* resolve, and adding a resolve above
 	# them would change which one they are describing. It cannot disturb the
 	# arithmetic further up either: exposure is set after the damage is paid
-	# (dice.gd:601), so `dealt` and `last_deflected` are untouched -- and they
+	# (dice.gd:662), so `dealt` and `last_deflected` are untouched -- and they
 	# are not re-read here, this section is after the screenshot on purpose.
 	#
 	# Rolled, then pinned. `Die.roll` assigns `up` itself (dice.gd:113), so a pin
@@ -663,10 +748,11 @@ func _run() -> void:
 	# enough to hit, whether its label is cut off, or whether two of them
 	# have started to overlap. A screenshot cannot see any of that.
 	#
-	# This is the check `fight.gd:200` claims already exists ("Five across
-	# 508px is 96px each, which the labels below fit; that is checked, not
-	# assumed"). It was not. Nothing in the repo asserted a touch target
-	# until now -- `_rects.gd` reasons about the six-dice tight case in a
+	# This is the check `fight.gd`'s "Five across" comment claims already
+	# exists ("Five across 508px is 96px each, which the labels below fit;
+	# that is checked, not assumed"). It was not. Nothing in the repo
+	# asserted a touch target until now -- `_rects.gd` reasons about the
+	# six-dice tight case in a
 	# comment and then only dumps rects for a human to read.
 	_ergonomics(game, "four-dice hand")
 
@@ -674,8 +760,23 @@ func _run() -> void:
 	# the cards are narrowest, so it is the only hand where a tap target can
 	# fall under the minimum. It runs after every grab on purpose: adding dice
 	# mutates the run, and anything below this line would inherit that.
+	# ...and owning enough to reach it. `unheld_bonus_dice()` only offers dice
+	# the player owns, because that is what "your unlocked dice" on the card
+	# claims, what the title picker draws as LOCKED, and what `set_loadout`
+	# will still be holding next run -- so six dice is only legal with all
+	# three bonus dice unlocked *and* four starters in hand. This bot was
+	# quietly holding a bonus die already, so its second New Die had nothing
+	# left to give: the hand stopped at five and this block ran against a
+	# five-dice hand while still calling itself six-dice. The floor caught it
+	# only because the button count happened to drop by 25, and nothing said
+	# six was wrong. Hence the assertion below, which would have.
+	RunState.record_run(5, false)  ## one more finished run: unlocked -> UNLOCK_CAP
+	game.run.set_loadout(["Blade", "Sunder", "Ward", "Hex"])
 	game.run.apply_upgrade("ADD_DIE", game.rng)
 	game.run.apply_upgrade("ADD_DIE", game.rng)
+	_check(game.run.dice.size() == 6,
+		"and the tight case is six dice, not %d (New Die needs three owned bonus dice and a four-starter hand)"
+		% game.run.dice.size())
 	game.show_fight()
 	await _settle()
 	_ergonomics(game, "six-dice hand")
@@ -683,11 +784,35 @@ func _run() -> void:
 	_check_listing_text()
 	_check_store_art()
 
-	if had_save:
-		DirAccess.copy_absolute(BACKUP, SAVE)
-		DirAccess.remove_absolute(BACKUP)
+
 	# Non-zero on a failed check, so `--check` can be run in a loop instead of
 	# being read. Verified both ways: 48 exits 0, 96 exits 1.
+	#
+	# The floor, and the reason for counting at all. A missing check is otherwise
+	# invisible: `_check` is local to this file, a throw inside a called function
+	# aborts only that function, the caller carries on to `quit()`, and the gate
+	# exits 0 having quietly checked less. Forcing one check block to stop running
+	# reports `741 ran, 766 expected -- 25 never executed` and exits 1.
+	#
+	# 766 is a lower bound, not the live count, and that is forced by this file,
+	# not a hedge. The check guarded on `if my_hp - panel.enc.hp > 0` is
+	# deliberate, because a turn that rolled all block has to stay silent
+	# rather than thud -- so the number of checks that run depends on whether the
+	# bot took damage that turn, which depends on the roll. Nine consecutive runs
+	# on an unchanged tree gave 766, 767, 767, 766, 766, 767, 767, 766, 766. An
+	# exact floor would be red roughly half the time for no reason, which is the
+	# "permanently red, worse than none" this registry's own comment warns about.
+	# `Check.report` compares with `<` for the same reason: a floor is a lower
+	# bound, and what it is for is noticing checks that stopped running.
+	#
+	# `check_only` is read in exactly one place (`_grab`, which returns before
+	# anything but the PNG write), so write mode runs the same count. Verified
+	# statically rather than by running: write mode is the invocation that would
+	# confirm it, and running it rewrites tracked PNGs.
+	if _ran < 766:
+		_fails += 1
+		push_error("FAILED: %d checks ran, 766 expected at least -- %d never executed. Either a _check() call site stopped running, or the floor is stale." % [_ran, 766 - _ran])
+	print("  shot.gd: %d checks ran, %d failed" % [_ran, _fails])
 	quit(1 if _fails > 0 else 0)
 
 
@@ -827,6 +952,29 @@ func _sfx_fired(game, name: String) -> bool:
 ## design guidance gives and the one a fingertip can reliably land on.
 const TOUCH_MIN := 48.0
 
+# Measure layout under xvfb, never under `--headless`. They disagree, and the
+# disagreement is large enough to invent a bug.
+#
+# A scratch probe printed the HP number's Label as 36 tall inside a 22px
+# ProgressBar, top-aligned, its text 7.00px below the bar's centre -- which
+# reads exactly like "the HP readout is not centred on its bar", on the screen
+# a player looks at hardest. Same build, same code, run again under
+# `xvfb-run -a ... --rendering-driver opengl3` the way every gate here runs:
+# 22 tall, off by +0.00. The rendered pixels agree with the second run -- the
+# player's bar fill occupies rows 427..448 and its glyphs sit at 433..436.
+#
+# The cause is the font. Headless resolves the default theme's metrics
+# differently, so a Label's combined minimum comes out taller than it is on a
+# real display, and a Label whose minimum exceeds its anchored parent's rect is
+# clamped *up* and *downward* -- the same clamp behind two other wrong
+# diagnoses in this file. A headless probe therefore reports phantom overflows,
+# and "the bar is 36 not 22" is the shape it takes.
+#
+# `test.gd` is unaffected: it runs headless because it checks rules and state,
+# which are renderer-independent, and it never measures a Control. Every
+# measurement in this file happens under a real renderer, and a scratch probe
+# has to as well or it is measuring a different program.
+
 ## The narrowest phone this is expected to clear: 360dp, and it does.
 ##
 ## 320dp is not a tuning miss, it is geometry. Clearing 48dp at 320dp needs 81
@@ -837,8 +985,15 @@ const TOUCH_MIN := 48.0
 ## "the layout does not claim that device", not "ship a bug". Run the sweep
 ## from PLAN.md's gate: `--check --at 360`, `--at 411`, `--at 540`.
 
-## How many checks this run has failed.
+## How many checks this run has failed, and how many ran at all. The count is
+## the point. `_check` is local to this file -- it predates the shared `Check`
+## registry -- so there was no floor here and nothing to notice when a check
+## stops running: a throw inside a called function aborts only that function,
+## the caller carries straight on to `quit()`, and the gate exits 0 having
+## silently checked less. That is the failure `_balance.gd` documents having
+## hit, and 101 call sites here had no defence against it.
 var _fails := 0
+var _ran := 0
 
 ## Width of the phone being reasoned about, in dp. `--at 360` for a narrow one.
 ## Defaults to 540 because that is the canvas the layout is authored on, and
@@ -888,7 +1043,21 @@ func _dp(canvas_px: float) -> float:
 ## printed "Assertion failed: 'Roll' is a 96x54 target, over the 96 minimum"
 ## for both hands and `$?` was 0. A gate whose result nothing can read is a
 ## gate nobody runs, which is the whole reason `--check` exists.
+##
+## The same primitive was still in use one file over. `dice.gd`'s `_pair_tests`
+## had exactly one bare `assert` among 150 `Check.check` calls, and it is the
+## only thing in the repo that reads `face_hit` through `hardest` -- the pair
+## into Exposed has nothing else testing it. Re-run with a condition that cannot
+## hold: `test.gd` still exited 0, the assertion printed to stderr, and the
+## count went 8526 -> 8524, because the abort takes the following checks with
+## it. Found by counting the primitives (`grep -c "	assert(" *.gd` over the
+## three suite files returns 1, 0, 0) rather than by reading 216 assertions,
+## which is the affordable way to find the one that is different. The count is
+## worth one caveat: this paragraph quotes the command, so `shot.gd` now returns
+## 1 for a `assert(` that is prose. The call sites are the ones at the start of
+## a line and a tab; the ones inside a comment start with `##`.
 func _check(cond: bool, msg: String) -> void:
+	_ran += 1
 	if cond:
 		return
 	_fails += 1
@@ -896,18 +1065,55 @@ func _check(cond: bool, msg: String) -> void:
 
 
 
+## Every Label rect inside one control, for a failure line that can say what
+## the player is actually looking at rather than only that something was true.
+func _label_rects(c: Node) -> String:
+	var out := ""
+	for l in c.find_children("*", "Label", true, false):
+		out += "[%s %s] " % [l.text, str(l.get_global_rect())]
+	return out
+
+
+## The chain of rects a control sat in, innermost first. This is on the failure
+## line of the screen-fit check below because "the button hangs off the bottom"
+## and "the button hangs off the bottom" read identically while meaning two
+## different bugs -- the control is too tall for its own content, or a parent
+## handed it less than its combined minimum and Godot clamped it *up* past the
+## edge. Only the second one is fixable by moving a number, and the chain says
+## which it is. Stops at the Window, which has no rect to give.
+func _ancestors(c: Control) -> String:
+	var out := ""
+	var a: Node = c.get_parent()
+	while a is Control:
+		out += "%s%s -> " % [a.get_class(), str(a.get_global_rect())]
+		a = a.get_parent()
+	return out
+
+
 ## Every tappable thing on a screen, read off the laid-out rects.
 ##
-## Three claims, and none of them is "the button exists" -- a screenshot has
-## that already covered eight times over. A target is *big enough*, a label
-## *fits inside* it, and two targets do not *overlap*. The middle one is the
-## one that bites, because the buttons carry counts ("Focus (1)",
-## "Re-roll (1)") that grow with the run, and the row is fixed at five
-## across 508px: more text does not make the button wider, it makes the label
-## overflow. `get_combined_minimum_size` is the engine's own answer to "how
-## wide does this control want to be", so comparing it against what the
-## container actually granted catches a squeeze the moment it happens rather
-## than when someone squints at a PNG.
+## Four claims, and none of them is "the button exists" -- a screenshot has that
+## already covered eight times over. A target is *big enough*, it *fits the
+## screen*, a label *fits inside* it, and two targets do not *overlap*.
+##
+## The label one had its rationale backwards until this was measured, so the
+## measurement is the point. It read: the row is five across a fixed 508px and
+## the buttons carry counts ("Focus (1)", "Re-roll (1)") that grow with the run,
+## so more text cannot make a button wider and must instead overflow its label.
+## Appended 46 characters to the re-roll label and ran the gate. The row grew
+## from **508 to 627** and pushed 'End turn' 100px off the right edge; the
+## screen-fit check caught it, naming the button row itself among 33 failures.
+## A Container does not squeeze a child below its combined minimum -- it grows,
+## and the growth propagates up until something overflows. So the label check
+## cannot fire for any button that lives in one, and every button here does
+## (`btns` and `col` are the parents of all of them). Its one live path is the
+## mute button, whose rect comes from anchors and offsets rather than from a
+## Container. It stays for that, and not for the story it used to tell.
+##
+## The 188px of headroom the old text implied did not exist is still real -- five
+## label minimums come to 296 against 484px of button -- but it is headroom
+## before the row *grows*, not before a label overflows. Same number, and it
+## does not mean what it was written to mean.
 ##
 ## This walks the tree rather than taking a panel, and that is not tidiness.
 ## Given a panel it could only ever see the fight screen's five buttons and
@@ -934,8 +1140,9 @@ func _ergonomics(root: Node, label: String) -> void:
 		var r := c.get_global_rect()
 		_check(r.position.x >= 0.0 and r.position.y >= 0.0
 			and r.end.x <= vp.x and r.end.y <= vp.y,
-			"%s: '%s' fits the %.0fx%.0f screen (at %s)"
-			% [label, b.text, vp.x, vp.y, r])
+			"%s: '%s' fits the %.0fx%.0f screen (at %s, over by %.2fpx; in %s)"
+			% [label, b.text, vp.x, vp.y, r, maxf(r.end.y - vp.y, r.end.x - vp.x),
+				_ancestors(c)])
 		_check(c.get_combined_minimum_size().x <= c.size.x,
 			"%s: '%s' label fits its %.0fpx button (wants %.0f)"
 			% [label, b.text, c.size.x, c.get_combined_minimum_size().x])
@@ -950,6 +1157,31 @@ func _ergonomics(root: Node, label: String) -> void:
 			_check(not a.intersects(b2),
 				"%s: target %d ('%s') does not overlap %d ('%s')"
 				% [label, i, targets[i].text, j, targets[j].text])
+
+	# The same fit, for text. It is here because of where the loop above
+	# *stops*: the fight screen's overflow was seen by the Button pass, not
+	# missed by it -- `enemy_sigil`'s floor pushed the column 16px past the edge
+	# and the button row was the last child, so the overflow landed on a Button.
+	# A ticker carrying the mode prompt, cut off at the bezel, is a rule the
+	# player cannot read, and if the last child of that column were a Label
+	# instead, nothing above would see it.
+	#
+	# Which is the argument for having it, and the argument was previously
+	# overstated in the other direction: this was written as "it has never fired
+	# and no Label overflow is known reachable", which is true of the authored
+	# layout and says nothing about whether the check works. It works. The
+	# 46-character re-roll label fired it eight times, because the row's growth
+	# pushed every label in the column -- the ticker, the depth bar, the armour
+	# line -- past the right edge along with the buttons. A check proven dead
+	# under a mutation aimed at it is dead; this one is not.
+	for l in root.find_children("*", "Label", true, false):
+		if not l.is_visible_in_tree():
+			continue
+		var lr: Rect2 = l.get_global_rect()
+		_check(lr.position.x >= 0.0 and lr.position.y >= 0.0
+			and lr.end.x <= vp.x and lr.end.y <= vp.y,
+			"%s: the line '%s' fits the %.0fx%.0f screen (at %s; in %s)"
+			% [label, l.text, vp.x, vp.y, lr, _ancestors(l)])
 
 	# A target must not sit on top of a solid fill. ColorRects are the game's
 	# opaque blocks -- depth pips, the enemy sigil, bar fills -- so an overlap
@@ -1042,6 +1274,27 @@ func _check_listing_text() -> void:
 const COUNT_WORD := ["", "one", "two", "three", "four", "five", "six", "seven",
 	"eight", "nine", "ten", "eleven", "twelve"]
 
+## Reads a count out of `COUNT_WORD`, or hands back the numeral if the table has
+## run out.
+##
+## Every row below subscripts that table by a constant -- `FINAL_DEPTH + 1`,
+## `POOL_SIZE`, `ARMOR_GROW_CAP` -- and Godot constant-folds a `const` array
+## indexed by a `const`, so the subscript is evaluated at compile time. The table
+## holds exactly thirteen entries and `ARMOR_GROW_CAP` is 12, so the file compiles
+## by one slot of luck: set the cap to 14 and `shot.gd` does not load at all,
+## taking every check in it with it.
+##
+## Found by changing the cap, which is also the only way to find it. And the
+## failure it produces is the worst kind available -- not a red row naming the
+## claim that went stale, but a parse error naming nothing, surfaced by a
+## *different* file's suite reporting that this one would not load.
+##
+## Routing through a function stops the folding, so an out-of-range count becomes
+## the numeral "14" and the row turns red against copy that still says "twelve".
+## That is the failure this whole gate exists to produce.
+static func _count_word(n: int) -> String:
+	return COUNT_WORD[n] if n >= 0 and n < COUNT_WORD.size() else str(n)
+
 ## The full description's factual claims, each tied to the code that owns it.
 ##
 ## Length was checked and accuracy was not, which is the gap: the block fits
@@ -1051,6 +1304,11 @@ const COUNT_WORD := ["", "one", "two", "three", "four", "five", "six", "seven",
 ## one of your dice to nothing" against "each face is damage, block, or a bonus
 ## re-roll". The copy was internally consistent and externally false, which is
 ## the hardest kind of wrong to catch by reading.
+##
+## The Hexweaver one came back after being repaired, in a second wrong form, so
+## it is no longer here: `test.gd`'s `_store_copy` reads this same file, and
+## `run.gd`'s `self_test` holds the mechanic half. A row here would have been
+## the right place and would have gone unrun, which is worse than not having it.
 ##
 ## This lives here rather than in `run.gd`'s `self_test`, which pins the enemy
 ## claims, because it is the only function holding the text. A check in `run.gd`
@@ -1066,30 +1324,74 @@ func _check_copy_claims(raw: String) -> void:
 	var text := raw.replace("\n", " ").to_lower()
 	var boss := RunState.new().enemy_for(RunState.FINAL_DEPTH)
 	# Every claim is `copy contains (a phrase built from a constant)`, so moving
-	# the constant makes its row red rather than silently leaving the prose.
+	# the constant makes its row red rather than silently leaving the prose --
+	# with one exception, "a fifth die", which is an ordinal and `COUNT_WORD` is
+	# a cardinal list, so it stays a literal. Deriving it anyway
+	# (`COUNT_WORD[POOL_SIZE + 1]`) builds "a five die" and the row goes red
+	# over copy that is correct; that was tried and reverted. Move POOL_SIZE and
+	# the "you bring four dice" row below reddens with it.
 	for claim in [
-		["%s fights stand between you and the devourer" % COUNT_WORD[RunState.FINAL_DEPTH + 1],
+		["%s fights stand between you and the devourer" % _count_word(RunState.FINAL_DEPTH + 1),
 			"the fight count is FINAL_DEPTH + 1"],
-		["you bring %s dice." % COUNT_WORD[RunState.POOL_SIZE], "the opening hand is POOL_SIZE"],
-		["you are reading %s numbers" % COUNT_WORD[RunState.POOL_SIZE],
+		["you bring %s dice." % _count_word(RunState.POOL_SIZE), "the opening hand is POOL_SIZE"],
+		["you are reading %s numbers" % _count_word(RunState.POOL_SIZE),
 			"the dice you read each turn is POOL_SIZE"],
 		["add a fifth die to the pool", "New Die adds exactly one to a POOL_SIZE hand"],
-		["one of three upgrades", "the offer is 1-of-3"],
-		["your first three finished runs each", "the unlock cap is three"],
+		["one of %s upgrades" % _count_word(RunState.OFFER_COUNT), "the offer is 1-of-N"],
+		["your first %s finished runs each" % _count_word(RunState.UNLOCK_CAP),
+			"the unlock cap is UNLOCK_CAP"],
 		["it has %d health" % boss.hp, "the boss health the copy quotes"],
 		# The two that were wrong for the same reason: each quoted a *starting*
 		# value as a permanent one. Bank has no per-fight cap at all -- a hold
 		# pays on the resolve after the roll it survived, then clears, and
 		# `dice.gd`'s `_bank_budget_tests` takes three in one fight -- and the
 		# Golem's growth stops at ARMOR_GROW_CAP whether or not you break it.
-		["each fight gives you %s focus" % COUNT_WORD[RunState.new().base_focus],
+		["each fight gives you %s focus" % _count_word(RunState.new().base_focus),
 			"the Focus charge a run starts with is base_focus"],
 		["you can hold a die on every turn", "Bank is not capped per fight"],
-		["to a ceiling of %s" % COUNT_WORD[Rules.Enemy.ARMOR_GROW_CAP],
+		["to a ceiling of %s" % _count_word(Rules.Enemy.ARMOR_GROW_CAP),
 			"the Golem's armour ceiling is ARMOR_GROW_CAP"],
+		["you get %s re-roll a turn" % _count_word(RunState.new().base_rerolls),
+			"the re-roll budget a turn opens with is base_rerolls"],
+		["rolling well earns you another for the next one",
+			"a face grant is a re-roll that survives to the next turn"],
+		["unlock a die you can pick at the title",
+			"an unlock widens what you may pick, not the hand a run opens on"],
 	]:
 		_check(text.contains(str(claim[0]).to_lower()),
-			"the description's claim about %s -- looking for %r" % [claim[1], claim[0]])
+			"the description's claim about %s -- looking for %s" % [claim[1], claim[0]])
+
+	# The ninth false claim, and the ninth of the same shape: a consequence the
+	# sentence drew from a number that is true. "Your first three finished runs
+	# each unlock a die" is correct -- `unlocked` caps at 3 -- and the copy then
+	# spent the next eleven words on something that is not: "so the next one
+	# starts with a fuller hand". It does not, and cannot: `set_loadout` trims
+	# to POOL_SIZE and tops back up, and the title picker refuses to go past
+	# POOL_SIZE either, so every run in the game opens on four. The block said
+	# so itself four lines later ("past four, the only way wider is a New Die"),
+	# which is what made this a contradiction rather than an inaccuracy.
+	#
+	# The row above pins the replacement; this one names the old sentence so a
+	# future edit cannot restore it by accident, for the reason the re-roll
+	# negations give: a check that only asserts the true phrase sits happily over
+	# a copy that also still contains the false one. The invariant itself is
+	# `run.gd::_check_fuller_hand_claim`, which pins it against the code rather
+	# than against this file.
+	for wrong in ["starts with a fuller hand", "a fuller hand"]:
+		_check(not text.contains(wrong),
+			"the description does not claim an unlock widens the opening hand (%s)" % wrong)
+
+	# The negation, because the claim above is what the copy used to assert and
+	# it was false. "one re-roll for the whole hand" and "the turn's single
+	# re-roll" were both right about the *base* budget and wrong as a total,
+	# for two independent reasons: FOCUS adds one every turn (measured: 16.3% of
+	# turns open on a base of two or more), and a Hex 4/5/6 or one of Spark's
+	# spark faces earns a re-roll that used to be wiped before it could be spent
+	# (44.6% of turns open holding one the run had not bought). A check that
+	# only asserts the positive phrase would sit happily over both sentences.
+	for wrong in ["single re-roll", "re-roll once", "one re-roll for the whole hand"]:
+		_check(not text.contains(wrong),
+			"the description does not still claim a flat re-roll budget (%s)" % wrong)
 
 	# The categorical one, and the only claim here that is about the roster
 	# rather than a constant: "each face is damage, block, or a bonus re-roll"
@@ -1097,16 +1399,29 @@ func _check_copy_claims(raw: String) -> void:
 	# Riposte and all of them worth nothing. The copy now says so, so the copy
 	# only holds while such faces still exist -- re-forge Sunder's `rust` away
 	# and the sentence goes stale, which is the point of checking it.
+	#
+	# `granters` is the other direction and rides the same walk: the copy says
+	# "rolling well earns you another for the next one", which needs a face that
+	# hands one out -- three on Hex, two on Spark. One loop, not two, because a
+	# second `for d in` in this function is a redeclaration GDScript rejects.
 	var dead := 0
+	var granters := 0
 	for d in Rules.Encounter.library() + Rules.Encounter.bonus_dice():
 		for f in d.faces:
 			if f.dmg == 0 and f.block == 0 and f.rerolls == 0:
 				dead += 1
+			if f.rerolls > 0:
+				granters += 1
 	_check(dead > 0,
 		"the roster still holds faces worth nothing, so the copy's 'a few faces are nothing at all' holds (found %d)"
 		% dead)
 	_check(text.contains("a few faces are nothing at all"),
 		"and the description says so rather than claiming every face does something")
+	_check(granters > 0,
+		"the roster holds %d faces that hand out a re-roll, which is what"
+		% granters)
+	_check(text.contains("rolling well earns you another"),
+		"and the copy says a good roll earns the next turn's re-roll")
 
 
 ## The Assets table in `play/LISTING.md` states a spec and a measured value for

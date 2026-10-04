@@ -71,6 +71,103 @@ var cards: Array[Button] = []
 var name_labels: Array[Label] = []
 var value_labels: Array[Label] = []
 var effect_labels: Array[Label] = []
+var icons: Array = []
+## The rim colour of each die, cached so `_draw_die` can paint the bevel without
+## re-deriving the card's whole state. Written by `_paint_card`, read by the draw
+## callback -- so it is a second channel onto the same state, and the only rule
+## is that both are written in the same function.
+var card_jewel: Array[Color] = []
+## The die body fill, same deal as `card_jewel`: the two used to be one
+## StyleBoxFlat and are now two numbers because the bevel needs to paint both of
+## them separately. Written in the same function, read in the same draw.
+var card_fill: Array[Color] = []
+## 0..1, tweened by `_start_breathing`. Drawn into rather than applied as a
+## scale, because `enemy_sigil` is inside a VBoxContainer and a transform on it
+## fights nothing -- but a *second* one would, if the tween ever moved the
+## control instead of the number.
+var _breath := 0.0
+var _breath_tween: Tween
+var _flash_rect: ColorRect
+
+
+## One die face's icon. Drawn, not typed, and that is the whole reason this is a
+## class.
+##
+## DICE_FATE_REBIRTH_PLAN.md 3.1 asks for ⚔️ / 🛡️ / ☠️ / ✨ beside the numbers, and
+## the default Godot font carries no emoji -- they render as blanks on every
+## platform, and shipping a font to fix that would undo the reason theme.gd has
+## no font file at all ("nothing to go missing on a fresh checkout"). So the four
+## glyphs are the same four, drawn. A `Control` rather than more `_draw` calls in
+## `_draw_die` because it has to sit in the layout next to the number and be
+## redrawn on its own when only the icon changes.
+class DieIcon extends Control:
+	## 0 none, 1 blade, 2 ward, 3 hex, 4 focus. See `icon_kind`.
+	var kind := 0
+	var tint := Color.WHITE
+
+	func _draw() -> void:
+		if kind == 0 or size.x < 6.0:
+			return
+		var s: float = minf(size.x, size.y)
+		var o := (size - Vector2(s, s)) * 0.5
+		var c := Color(tint.r, tint.g, tint.b, 0.95)
+		var wash := Color(tint.r, tint.g, tint.b, 0.26)
+		match kind:
+			1: _sword(o, s, c, wash)
+			2: _shield(o, s, c, wash)
+			3: _skull(o, s, c, wash)
+			4: _spark(o, s, c, wash)
+
+	func _p(o: Vector2, s: float, u: Vector2) -> Vector2:
+		return o + u * s
+
+	## Blade: two crossed swords, dark stroke under a bright one so the shape
+	## still reads on a CARD_HI fill at phone size.
+	func _sword(o: Vector2, s: float, c: Color, wash: Color) -> void:
+		draw_line(_p(o, s, Vector2(0.16, 0.84)), _p(o, s, Vector2(0.84, 0.16)), Color(0, 0, 0, 0.4), s * 0.17)
+		draw_line(_p(o, s, Vector2(0.16, 0.84)), _p(o, s, Vector2(0.84, 0.16)), c, s * 0.10)
+		draw_line(_p(o, s, Vector2(0.84, 0.84)), _p(o, s, Vector2(0.16, 0.16)), Color(0, 0, 0, 0.4), s * 0.17)
+		draw_line(_p(o, s, Vector2(0.84, 0.84)), _p(o, s, Vector2(0.16, 0.16)), c, s * 0.10)
+		draw_circle(_p(o, s, Vector2(0.5, 0.5)), s * 0.085, c)
+
+	## Ward: a heater shield with a cross boss.
+	func _shield(o: Vector2, s: float, c: Color, wash: Color) -> void:
+		var pts := PackedVector2Array([
+			_p(o, s, Vector2(0.5, 0.07)), _p(o, s, Vector2(0.91, 0.25)),
+			_p(o, s, Vector2(0.87, 0.63)), _p(o, s, Vector2(0.5, 0.95)),
+			_p(o, s, Vector2(0.13, 0.63)), _p(o, s, Vector2(0.09, 0.25))])
+		draw_colored_polygon(pts, wash)
+		var loop := pts
+		loop.append(pts[0])  ## polyline does not close itself
+		draw_polyline(loop, c, s * 0.09)
+		draw_line(_p(o, s, Vector2(0.5, 0.26)), _p(o, s, Vector2(0.5, 0.78)), c, s * 0.07)
+		draw_line(_p(o, s, Vector2(0.29, 0.47)), _p(o, s, Vector2(0.71, 0.47)), c, s * 0.07)
+
+	## Hex: a skull. No face in the game carries this -- there is no hex stat on a
+	## die, a curse is an enemy behaviour -- so it is drawn on the Hexweaver and
+	## kept here so the set is complete and a future hex face has somewhere to go.
+	func _skull(o: Vector2, s: float, c: Color, wash: Color) -> void:
+		draw_circle(_p(o, s, Vector2(0.5, 0.40)), s * 0.29, wash)
+		draw_arc(_p(o, s, Vector2(0.5, 0.40)), s * 0.29, 0.0, TAU, 28, c, s * 0.08)
+		draw_rect(Rect2(_p(o, s, Vector2(0.35, 0.60)), Vector2(s * 0.30, s * 0.17)), wash)
+		draw_circle(_p(o, s, Vector2(0.38, 0.38)), s * 0.095, c)
+		draw_circle(_p(o, s, Vector2(0.62, 0.38)), s * 0.095, c)
+		for i in 3:
+			var x := 0.38 + 0.12 * float(i)
+			draw_line(_p(o, s, Vector2(x, 0.62)), _p(o, s, Vector2(x, 0.79)), c, s * 0.045)
+
+	## Focus: an eight-point star, the only radial one of the four.
+	func _spark(o: Vector2, s: float, c: Color, wash: Color) -> void:
+		var mid := _p(o, s, Vector2(0.5, 0.5))
+		var pts := PackedVector2Array()
+		for i in 8:
+			var a := TAU * float(i) / 8.0 - PI / 2.0
+			var rr: float = (0.45 if i % 2 == 0 else 0.15) * s
+			pts.append(mid + Vector2(cos(a), sin(a)) * rr)
+		draw_colored_polygon(pts, wash)
+		var loop := pts
+		loop.append(pts[0])
+		draw_polyline(loop, c, s * 0.05)
 
 
 func _ready() -> void:
@@ -84,6 +181,7 @@ func start(e: Rules.Encounter) -> void:
 	has_rolled = false
 	busy = false
 	_ensure_cards()
+	_start_breathing()
 	_refresh()
 
 
@@ -108,7 +206,19 @@ func _build_ui() -> void:
 	# only control here that stretches, so it takes all the leftover height --
 	# which is the whole enemy, not a share of it.
 	enemy_sigil = Control.new()
-	enemy_sigil.custom_minimum_size = Vector2(0, 132)
+	# It has no minimum height, and that is the fix rather than an oversight.
+	# Everything below it is pinned -- 678px of labels, bars, dice and buttons,
+	# plus 100px of separation -- so the column's minimum is 778 plus the sigil.
+	# The panel is not ours to size: `game.gd`'s `panel.size_flags_vertical =
+	# Control.SIZE_EXPAND_FILL` hands it whatever is left
+	# under the depth strip, which is 926 here, or 894 inside the margins above.
+	# A 132px floor put the column's minimum at 910, and Godot clamps a control
+	# up to its combined minimum, so the 16px over was pushed onto the screen and
+	# the action row ended with its lower edge at exactly 960.000 on a 960px
+	# canvas -- flush with the bezel, and tripping `shot.gd`'s screen-fit check
+	# by a hair on every run where the shake tween had not finished decaying.
+	# Shrinking the enemy is the one thing on this screen that costs nothing, so
+	# it is what gives the 16 back.
 	enemy_sigil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	enemy_sigil.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	enemy_sigil.draw.connect(_draw_sigil)
@@ -213,8 +323,13 @@ func _build_ui() -> void:
 	# the card press keeps the turn at one tap per action. They do not need a
 	# second row -- they are mutually exclusive, and neither button grows when
 	# armed, so the "tap a die" half of the label goes to the ticker line where
-	# the other teaching line already lives. Five across 508px is 96px each,
-	# which the labels below fit; that is checked, not assumed.
+	# the other teaching line already lives. Five across 508px is 96.8px each:
+	# the row hands out 96 and then 97 four times, and 484 + 4 x 6 is exactly
+	# the 508 granted, so there is no slack to give back. The labels fit inside
+	# that -- the widest is `Re-roll (1)` at 79px wanting into a 97 -- which is
+	# checked rather than assumed by the `get_combined_minimum_size().x <= size.x`
+	# row in `_ergonomics`, on all six screens and at 360 and 411 dp. This said
+	# "96px each", which is a number the engine never produces.
 	focus_btn = _mk_button(btns, "Focus", T.PICK)
 	focus_btn.pressed.connect(_on_focus_pressed)
 	bank_btn = _mk_button(btns, "Bank", T.BLOCK)
@@ -235,33 +350,22 @@ func _draw_sigil() -> void:
 	var r: float = enemy_sigil.size.y * 0.5 * clampf(0.5 + e.max_hp / 150.0, 0.6, 0.78)
 	var at := enemy_sigil.size / 2.0
 
-	var sides := 6
-	var rot := 0.0
-	match e.behavior:
-		Rules.Enemy.BEH_ARMOR_GROW: rot = PI / 6.0  ## flat-topped: it is plating up
-		Rules.Enemy.BEH_LIFESTEAL:
-			sides = 3
-			rot = PI  ## a downward point
-		Rules.Enemy.BEH_CURSE:
-			sides = 5
-			rot = -PI / 2.0  ## the warding star
-		Rules.Enemy.BEH_ENRAGE:
-			sides = 8
-			rot = PI / 8.0  ## all spikes, no flat side
-
-	var pts := PackedVector2Array()
-	for i in sides:
-		var a := rot + TAU * float(i) / float(sides)
-		pts.append(at + Vector2(cos(a), sin(a)) * r)
-
 	var boss: bool = e.max_hp > BOSS_HP
 	var edge: Color = T.GOLD if boss else T.DMG
+	var wash := Color(edge.r, edge.g, edge.b, 0.22)
+	var deep := Color(edge.r * 0.42, edge.g * 0.42, edge.b * 0.42, 0.55)
 
-	# The panel is the largest thing on the fight screen and it was showing
-	# nothing about the fight -- the enemy read as one flat outline. Armour is
-	# the stat a player most needs to see and least often does: it only ever
-	# appeared in a log line, and ARMOR_GROW raises it every turn. One tick per
-	# point, so the ring visibly thickens as a golem plates up.
+	# Armour and the boss ring stay outside the silhouette, because they were
+	# never decoration. Armour is the stat a player most needs to see and least
+	# often does: it only ever appeared in a log line, and ARMOR_GROW raises it
+	# every turn. One tick per point, so the ring visibly thickens as a golem
+	# plates up.
+	var rot := 0.0
+	match e.behavior:
+		Rules.Enemy.BEH_ARMOR_GROW: rot = PI / 6.0
+		Rules.Enemy.BEH_LIFESTEAL: rot = PI
+		Rules.Enemy.BEH_CURSE: rot = -PI / 2.0
+		Rules.Enemy.BEH_ENRAGE: rot = PI / 8.0
 	var reach: float = minf(enemy_sigil.size.x, enemy_sigil.size.y) * 0.5 - 8.0
 	if boss:
 		enemy_sigil.draw_arc(at, minf(r * 1.5, reach), 0.0, TAU, 48, T.GOLD, 1.5)
@@ -273,24 +377,19 @@ func _draw_sigil() -> void:
 			var d := Vector2(cos(a), sin(a))
 			enemy_sigil.draw_line(at + d * (tr - 9.0), at + d * tr, T.BLOCK, 3.0)
 
-	# A translucent wash of the edge colour, so the shape reads as a mass and not
-	# a smudge: PANEL on the backdrop is invisible at this size.
-	enemy_sigil.draw_colored_polygon(pts, Color(edge.r, edge.g, edge.b, 0.22))
-
-	# A second body turned half a step and scaled in, so the mass has a depth
-	# instead of reading as one outline. Behaviour already rotates the outer
-	# shape, so the two never line up for every enemy.
-	var inner := PackedVector2Array()
-	for i in sides:
-		var a := rot + TAU * (float(i) + 0.5) / float(sides)
-		inner.append(at + Vector2(cos(a), sin(a)) * r * 0.62)
-	enemy_sigil.draw_colored_polygon(inner, Color(edge.r, edge.g, edge.b, 0.14))
-
-	var loop := pts
-	loop.append(pts[0])  ## polyline does not close itself
-	enemy_sigil.draw_polyline(loop, edge, 3.0)
-	enemy_sigil.draw_circle(at, r * 0.3, edge)
-	enemy_sigil.draw_arc(at, r * 0.34, 0.0, TAU, 40, Color(edge.r, edge.g, edge.b, 0.7), 2.0)
+	# `_breath` is tweened by `_start_breathing`, so a standing enemy is never
+	# perfectly still. It scales the silhouette rather than the control, because
+	# `enemy_sigil` has no minimum height and a scale on it fights the Container
+	# that owns its rect -- the same fight `_float_text` lost by being parented
+	# to the wrong node.
+	var rr := r * (1.0 + _breath * 0.035)
+	match e.behavior:
+		Rules.Enemy.BEH_ARMOR_GROW, Rules.Enemy.BEH_BRACE:
+			_stone_sentinel(at, rr, wash, deep, edge, e.armor)
+		Rules.Enemy.BEH_LIFESTEAL: _blood_cultist(at, rr, wash, deep, edge)
+		Rules.Enemy.BEH_CURSE: _hexweaver(at, rr, wash, deep, edge)
+		Rules.Enemy.BEH_ENRAGE: _devourer(at, rr, wash, deep, edge)
+		_: _imp(at, rr, wash, deep, edge)
 
 
 ## A bar that carries its own numbers. The two bars sit one above the other with
@@ -346,6 +445,9 @@ func _ensure_cards() -> void:
 		name_labels.append(null)
 		value_labels.append(null)
 		effect_labels.append(null)
+		icons.append(null)
+		card_jewel.append(T.BORDER)
+		card_fill.append(T.CARD)
 		_build_card_face(i)
 		cards[i].pressed.connect(_on_card_pressed.bind(i))
 	while cards.size() > enc.dice.size():
@@ -356,6 +458,9 @@ func _ensure_cards() -> void:
 		name_labels.pop_back()
 		value_labels.pop_back()
 		effect_labels.pop_back()
+		icons.pop_back()
+		card_jewel.pop_back()
+		card_fill.pop_back()
 
 
 func _make_card() -> Button:
@@ -364,6 +469,14 @@ func _make_card() -> Button:
 	b.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	b.focus_mode = Control.FOCUS_NONE
 	b.clip_contents = true
+	# All five states transparent so `_draw_die` is never covered. The bevel is
+	# painted by the script and a Button's stylebox comes from the same draw pass,
+	# so leaving any fill on these is a coin toss on whether the die looks
+	# bevelled or flat. Hover and pressed still have to *say* something, so they
+	# say it through the label colours instead -- which is where the state was
+	# legible anyway.
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(state, T.flat(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 0))
 	dice_row.add_child(b)
 	return b
 
@@ -381,16 +494,47 @@ func _build_card_face(i: int) -> void:
 	cards[i].add_child(stack)
 
 	# MUTED, not FAINT: the die's name is its identity across a run, not a
-	# de-emphasised tag. FAINT measured 2.44:1 on the card -- under the 4.5:1 of
+	# de-emphasised tag. FAINT measured 2.15:1 on CARD_HI -- under the 4.5:1 of
 	# WCAG 2.2 SC 1.4.3 -- and left "BLADE" dimmer than the "2 DAMAGE" beneath
 	# it. The name still recedes: dominance is carried by the 40px number, not
 	# by fading the text. FAINT stays for what is meant to disappear (a locked
 	# die, a cursed face reading "--", a disabled button).
+	#
+	# The number that matters is the one on CARD_HI, not the one on CARD. This
+	# label is set once and never recoloured -- `effect_labels` below is
+	# recoloured per state, this one is not -- and the card behind it is filled
+	# CARD_HI whenever it is armed (`target != null`), picked for a re-roll, or
+	# hovered. MUTED measured 4.13:1 on CARD_HI at its old value: legible, and
+	# still short, on the three states where the player is being asked to act.
+	# Picking a face is not an edge case; it is how a re-roll is queued.
 	name_labels[i] = _card_label(stack, T.F_TINY, T.MUTED)
-	value_labels[i] = _card_label(stack, T.F_DISPLAY, T.TEXT)
-	value_labels[i].size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# The icon and the number share one centred row, because beside is the whole
+	# point: a glyph pinned over the corner of a card is a sticker, and a glyph
+	# beside the number is "this face deals damage" in one glance.
+	#
+	# Six dice across 540 is the tight case and the name label above already
+	# steps down for it -- 84px of card, less 8 of inset, leaves about 41px once
+	# a 26px icon and its separation are in. So the icon steps down too, rather
+	# than the number clipping, because a clipped number is a wrong number.
+	var wide: bool = enc.dice.size() >= 6
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.add_child(row)
+	icons[i] = DieIcon.new()
+	icons[i].custom_minimum_size = Vector2(20, 20) if wide else Vector2(26, 26)
+	icons[i].size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icons[i].size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	icons[i].mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icons[i])
+	value_labels[i] = _card_label(row, T.F_DISPLAY, T.TEXT)
 	value_labels[i].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	effect_labels[i] = _card_label(stack, T.F_TINY, T.MUTED)
+	# Connected last, and after the face exists, so the first `_draw` already has
+	# a jewel colour to read rather than falling back to BORDER for one frame.
+	cards[i].draw.connect(_draw_die.bind(i))
 
 
 func _card_label(parent: Node, size: int, colour: Color) -> Label:
@@ -521,6 +665,11 @@ func _on_end_turn() -> void:
 			_sfx("hurt")
 			_float_text("-%d" % (before_hp - enc.hp), T.HP, _anchor(player_bar))
 			_haptic(HAPTIC_BOSS if enc.enemy.max_hp > BOSS_HP else 45)
+			# Ten is where a hit stops being a cost and starts being an event --
+			# the same line `_on_end_turn` draws for the haptics. Below it the
+			# wash is a strobe and the number is already the news.
+			if before_hp - enc.hp >= 10:
+				_flash_screen()
 		_drain_log()
 		_refresh()
 
@@ -581,16 +730,33 @@ func _flicker(idxs: Array[int], steps: int) -> void:
 	_refresh()
 	for _step in steps:
 		for i in idxs:
+			var c := cards[i]
 			_paint_card(i, enc.dice[i].faces[rng.randi_range(0, 5)], false)
+			# A tumble is a shake, not a blur. While the faces cycle the dice are
+			# visibly off-square, and `rotation` is transform, so the container
+			# that owns their rect leaves it alone -- `position` would be stamped
+			# back on the next layout pass and the shake would never show at all.
+			c.pivot_offset = c.size / 2.0
+			c.rotation = rng.randf_range(-0.18, 0.18)
+			c.scale = Vector2.ONE * rng.randf_range(0.94, 1.06)
 		await get_tree().create_timer(0.035).timeout
-	for i in idxs:
+	for n in idxs.size():
+		var i := idxs[n]
 		_paint_card(i, enc.dice[i].face(), true)
 		var c := cards[i]
 		c.pivot_offset = c.size / 2.0
-		c.scale = Vector2(0.84, 0.84)
 		var tw := create_tween()
+		# The stagger is the point: four dice landing on one frame is a blink,
+		# four landing on four is a throw. 0.03 apart puts the last die down 0.09s
+		# after the first -- late enough to read as a sequence, short enough that
+		# the hand never feels like it is still moving once the button is back.
+		tw.tween_interval(0.03 * float(n))
+		tw.tween_callback(func() -> void:
+			c.scale = Vector2(0.84, 0.84))
 		tw.tween_property(c, "scale", Vector2.ONE, 0.2)\
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(c, "rotation", 0.0, 0.2)\
+			.parallel().set_trans(Tween.TRANS_SINE)
 	busy = false
 	_refresh()
 
@@ -706,30 +872,51 @@ func _paint_card(i: int, f: Rules.Face, final: bool) -> void:
 		kind = "+%d RE-ROLL" % f.rerolls
 	# The face's own word, unless it is now the same number the card already
 	# shows big -- a paired face's label is its *un*doubled number, so printing
-	# it would put "10" over "5" and the smaller one would be the lie.
-	var shown: String = f.label
-	if hit != f.dmg:
-		shown = str(hit)
-	effect_labels[i].text = shown if shown != str(value) else kind
+	# it would put "10" over "5" and the smaller one would be the lie. A numeric
+	# label is never a word, whatever it agrees with: SHARPEN and REFORGE raise
+	# a face's damage without touching its name, so it would agree by accident
+	# and disagree the moment either card was taken.
+	effect_labels[i].text = face_word(f.label, kind, value)
 	if held:
 		effect_labels[i].text = "HELD"
 	effect_labels[i].add_theme_color_override("font_color",
 		T.GOLD if target != null else (T.PICK if held else (T.TEXT if picked else T.MUTED)))
 
-	var style := T.card_style(f.dmg, f.block, f.rerolls, picked, spent)
-	# A focusable card is outlined gold while the mode is armed, and one that is
-	# already on its best face is not outlined at all -- otherwise the player
-	# taps, nothing happens, and the button just flashes. A maxed die cannot be
-	# focused, so the UI has to say so before the tap, not after.
-	if target != null or held:
-		style = T.flat(T.CARD_HI, T.GOLD if target != null else T.PICK, 2, T.RADIUS)
-		style.border_width_left = 3
-		style.border_width_right = 3
-	cards[i].add_theme_stylebox_override("normal", style)
-	cards[i].add_theme_stylebox_override("pressed", style)
-	cards[i].add_theme_stylebox_override("hover",
-		T.flat(T.CARD_HI, T.PICK if final else colour, 2, T.RADIUS))
+	# The card's box used to be a StyleBoxFlat built here and handed to the
+	# theme. It is two plain colours now, because `_draw_die` paints the bevel
+	# itself and a stylebox would cover it. `theme.gd`'s `card_style` built the
+	# same states in the same order and had no other caller, so it went with
+	# them; these two colours are the whole of what it used to return.
+	#
+	# A focusable card is rimmed gold while the mode is armed, and one already on
+	# its best face is not rimmed at all -- otherwise the player taps, nothing
+	# happens, and the card just flashes. A maxed die cannot be focused, so the
+	# UI has to say so before the tap, not after.
+	var fill: Color = T.CARD
+	var jewel: Color = colour if has_value else T.BORDER
+	if spent:
+		fill = T.PANEL
+		jewel = T.BORDER
+	elif picked:
+		fill = T.CARD_HI
+		jewel = T.PICK
+	if target != null:
+		fill = T.CARD_HI
+		jewel = T.GOLD
+	elif held:
+		fill = T.CARD_HI
+		jewel = T.PICK
+	card_fill[i] = fill
+	card_jewel[i] = jewel
 	cards[i].modulate = SPENT_DIM if (spent or held) else Color.WHITE
+	cards[i].queue_redraw()
+
+	# The icon follows the *face*, not the card state, so a die that is armed or
+	# held still shows what it is rather than a generic spark. `icon_kind` and
+	# `face_colour` agree on priority for the same reason.
+	icons[i].kind = icon_kind(f.dmg, f.block, f.rerolls)
+	icons[i].tint = colour
+	icons[i].queue_redraw()
 
 
 ## A short punch, so a big hit registers before the screen changes.
@@ -810,7 +997,18 @@ func _haptic(ms: int) -> void:
 ## thing that actually took the hit.
 func _flash_sigil() -> void:
 	enemy_sigil.modulate = Color(1, 1, 1, 0.45)
-	create_tween().tween_property(enemy_sigil, "modulate", Color.WHITE, 0.25)
+	# The knockback is a squash, not a slide. `enemy_sigil` is a Control a
+	# Container force-sets the rect of every layout pass, so a `position` punch
+	# would be undone before the player saw it -- but a transform survives one,
+	# and wide-and-short reads as a body taking the hit rather than a picture
+	# being resized.
+	enemy_sigil.pivot_offset = enemy_sigil.size * 0.5
+	var tw := create_tween()
+	tw.tween_property(enemy_sigil, "modulate", Color.WHITE, 0.25)
+	tw.parallel().tween_property(enemy_sigil, "scale", Vector2(1.14, 0.86), 0.07)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(enemy_sigil, "scale", Vector2.ONE, 0.26)\
+		.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 
 
 func _show_banner() -> void:
@@ -863,6 +1061,32 @@ func _pop(bar: ProgressBar, amount: int) -> void:
 	tw.chain().tween_callback(l.queue_free)
 
 
+## The word under a card's number, if it is a word. See `test.gd`'s
+## `_face_word` for the two upgrades that make a numeric label a stale value.
+static func face_word(label: String, kind: String, value: int) -> String:
+	return kind if label.is_valid_int() or label == str(value) else label
+
+
+## The caption under BEST HIT, which exists to name the cause of the number.
+##
+## Zero has two causes and the copy had room for one. Armour can eat the roll,
+## or the roll can be empty. Ward is six block faces and Riposte is five and a
+## junk, both takeable in the die picker, so a hand can hold nothing but faces
+## that deal no damage -- and then `best` reads 0 with no armour involved. The
+## Grunt's armour is 0, so that printed "ARMOUR 0 -- NOTHING LANDS" and blamed
+## the one enemy in the roster that cannot be the reason.
+##
+## `raw` is the most damage in the pool ignoring armour, which separates them:
+## raw 0 means nothing was rolled, anything higher means something was and the
+## armour took it. The two cannot overlap, because armour only ever subtracts.
+static func best_caption(best: int, raw: int, armour: int) -> String:
+	if best > 0:
+		return "BEST HIT"
+	if raw == 0:
+		return "NO DAMAGE THIS ROLL"
+	return "ARMOUR %d — NOTHING LANDS" % armour
+
+
 func _refresh() -> void:
 	if enc == null:
 		return
@@ -881,7 +1105,16 @@ func _refresh() -> void:
 	if enc.enemy.exposed > 0:
 		tag = ("%s   " % tag) if not tag.is_empty() else ""
 		tag += "exposed"
-	enemy_tag.text = tag.capitalize()
+	# Sentence case, not `String.capitalize()`. capitalize() is title case in
+	# Godot 4 -- it uppercases the first letter of *every* word and lowercases
+	# the rest -- so the names in `Dice.Enemy.behavior_name()`, which are
+	# deliberately lowercase ("curses a die", not "Curses A Die"), came out as
+	# "Curses A Die" on the way to the screen. Measured, not assumed: a check
+	# written to pass and let the gate decide failed at eight of nine depths.
+	# test.gd's `_enemy_tag` now holds the two halves that can still be falsified
+	# -- the names must arrive lowercase, and this file must contain no
+	# `.capitalize()` at all.
+	enemy_tag.text = tag.substr(0, 1).to_upper() + tag.substr(1)
 	enemy_tag.add_theme_color_override("font_color", T.GOLD if enc.enemy.exposed > 0 else T.MUTED)
 	enemy_tag.visible = not tag.is_empty()
 
@@ -902,8 +1135,10 @@ func _refresh() -> void:
 	# die, so this is the whole strategy in one number: a pool of 2s reads 0
 	# here, and re-rolling one of them into a 9 is the fight.
 	var best := 0
+	var raw := 0
 	for d in enc.dice:
 		var df: Rules.Face = d.face()
+		raw = maxi(raw, df.dmg)
 		# The face's own pierce rides here too, or BEST HIT would under-report a
 		# pierced Fang by up to 6 while the resolve deals it -- the preview and the
 		# number that actually lands are not allowed to disagree.
@@ -912,7 +1147,7 @@ func _refresh() -> void:
 	best_num.add_theme_color_override("font_color", T.DMG if best > 0 else T.FAINT)
 	# At zero the number alone is ambiguous -- it reads as "you did nothing this
 	# turn", which is the opposite of what is true. Name the cause.
-	best_cap.text = "BEST HIT" if best > 0 else "ARMOUR %d — NOTHING LANDS" % enc.enemy.armor
+	best_cap.text = best_caption(best, raw, enc.enemy.armor)
 	best_cap.add_theme_color_override("font_color", T.FAINT if best > 0 else T.BLOCK)
 	# The log only ever carries what just happened, so an untouched fight has
 	# nothing in it -- and the first turn is exactly that. See the bottom of this
@@ -971,3 +1206,243 @@ func _refresh() -> void:
 	# WCAG AA asks of body text, and this was the only label on screen failing it.
 	if ticker.text.is_empty() and not enc.over:
 		_say("Roll, then tap dice to queue a re-roll.", T.GOLD, T.F_TINY)
+
+
+# --- silhouettes ---
+#
+# Five shapes, one per behaviour, drawn from a handful of points each. What
+# replaced them was a regular polygon whose only variable was how many sides it
+# had, which meant the Grunt and the boss differed by 0.18 of a radius and every
+# enemy read as the same object with a different HP.
+#
+# `wash` is a translucent body so the shape reads as mass against the backdrop;
+# `deep` is the same hue crushed to ~40% for the parts that should read as
+# behind; `edge` is the rim, and it is gold on the boss so "the gold thing" keeps
+# meaning what it meant when it was a gold circle.
+
+## `draw_polyline` does not close itself, so every outline goes through this --
+## five silhouettes that each forgot the closing point is five bugs of one shape.
+func _outline(pts: PackedVector2Array, col: Color, width: float = 3.0) -> void:
+	var loop := pts
+	loop.append(pts[0])
+	enemy_sigil.draw_polyline(loop, col, width)
+
+
+## An eye: a bright core inside a soft halo. The halo is what makes it read as
+## glowing rather than as a drawn dot, and it is one translucent circle.
+func _eye(at: Vector2, r: float, col: Color) -> void:
+	enemy_sigil.draw_circle(at, r * 2.8, Color(col.r, col.g, col.b, 0.16))
+	enemy_sigil.draw_circle(at, r, col)
+
+
+## Stone Sentinel: a craggy boulder torso between two slab shoulders, a squat
+## head, and runic cracks that brighten with `armor`. That last part is the point
+## -- ARMOR_GROW raises armour every turn and the cracks put that number on the
+## body, where the player is already looking, as well as on the ring.
+func _stone_sentinel(at: Vector2, r: float, wash: Color, deep: Color,
+		edge: Color, armor: int) -> void:
+	for s in [-1.0, 1.0]:
+		enemy_sigil.draw_colored_polygon(PackedVector2Array([
+			at + Vector2(1.06 * s, -0.40) * r, at + Vector2(0.54 * s, -0.50) * r,
+			at + Vector2(0.48 * s, 0.04) * r, at + Vector2(1.00 * s, 0.12) * r]), deep)
+	var body := PackedVector2Array([
+		at + Vector2(-0.66, -0.34) * r, at + Vector2(0.66, -0.34) * r,
+		at + Vector2(0.88, 0.22) * r, at + Vector2(0.46, 0.76) * r,
+		at + Vector2(-0.46, 0.76) * r, at + Vector2(-0.88, 0.22) * r])
+	enemy_sigil.draw_colored_polygon(body, wash)
+	var head := PackedVector2Array([
+		at + Vector2(-0.28, -0.86) * r, at + Vector2(0.28, -0.86) * r,
+		at + Vector2(0.20, -0.44) * r, at + Vector2(-0.20, -0.44) * r])
+	enemy_sigil.draw_colored_polygon(head, wash)
+	_outline(body, edge)
+	_outline(head, edge, 2.0)
+	_eye(at + Vector2(-0.10, -0.66) * r, r * 0.05, edge)
+	_eye(at + Vector2(0.10, -0.66) * r, r * 0.05, edge)
+	var glow: float = clampf(0.22 + 0.14 * float(armor), 0.22, 1.0)
+	var crack := Color(T.GOLD_LIGHT.r, T.GOLD_LIGHT.g, T.GOLD_LIGHT.b, glow)
+	for i in 3:
+		var y := (-0.16 + 0.24 * float(i)) * r
+		enemy_sigil.draw_line(at + Vector2(-0.46, y) * r,
+			at + Vector2(0.34, y - 0.10 * r) * r, crack, 2.0)
+
+
+## Blood Cultist: a shrouded figure under a deep hood with a crimson blade held
+## across it. LIFESTEAL heals on whatever lands, so the blade is the silhouette --
+## it is the only enemy whose shape leans toward the player.
+func _blood_cultist(at: Vector2, r: float, wash: Color, deep: Color, edge: Color) -> void:
+	var robe := PackedVector2Array([
+		at + Vector2(-0.34, -0.34) * r, at + Vector2(0.34, -0.34) * r,
+		at + Vector2(0.72, 0.82) * r, at + Vector2(-0.72, 0.82) * r])
+	enemy_sigil.draw_colored_polygon(robe, wash)
+	var hood := PackedVector2Array([
+		at + Vector2(0.0, -0.92) * r, at + Vector2(0.46, -0.20) * r,
+		at + Vector2(-0.46, -0.20) * r])
+	enemy_sigil.draw_colored_polygon(hood, deep)
+	_outline(robe, edge)
+	_outline(hood, edge, 2.0)
+	enemy_sigil.draw_line(at + Vector2(0.30, 0.72) * r,
+		at + Vector2(-0.44, -0.16) * r, T.DMG, 4.0)
+	enemy_sigil.draw_line(at + Vector2(-0.30, -0.34) * r,
+		at + Vector2(-0.18, -0.20) * r, T.GOLD, 3.0)
+	for s in [-1.0, 1.0]:
+		enemy_sigil.draw_colored_polygon(PackedVector2Array([
+			at + Vector2(0.12 * s, -0.44) * r, at + Vector2(0.24 * s, -0.44) * r,
+			at + Vector2(0.18 * s, -0.26) * r]), T.TEXT)
+
+
+## Hexweaver: a hooded spider-priestess -- four glowing eyes, four venom
+## tendrils off the shoulders. CURSE drags one of your dice to its worst face, so
+## the eyes carry the meaning and the tendrils reach across the board toward you.
+func _hexweaver(at: Vector2, r: float, wash: Color, deep: Color, edge: Color) -> void:
+	for i in 4:
+		var a := PI * (0.18 + 0.215 * float(i))
+		var d := Vector2(cos(a), sin(a))
+		var root := at + d * r * 0.42
+		var knee := root + d * r * 0.42 + Vector2(0, -r * 0.14)
+		enemy_sigil.draw_line(root, knee, edge, 2.0)
+		enemy_sigil.draw_line(knee, root + d * r * 0.86, edge, 2.0)
+	var thorax := PackedVector2Array([
+		at + Vector2(0.0, -0.40) * r, at + Vector2(0.44, 0.06) * r,
+		at + Vector2(0.30, 0.62) * r, at + Vector2(-0.30, 0.62) * r,
+		at + Vector2(-0.44, 0.06) * r])
+	enemy_sigil.draw_colored_polygon(thorax, wash)
+	var hood := PackedVector2Array([
+		at + Vector2(0.0, -0.94) * r, at + Vector2(0.40, -0.36) * r,
+		at + Vector2(-0.40, -0.36) * r])
+	enemy_sigil.draw_colored_polygon(hood, deep)
+	_outline(thorax, edge)
+	_outline(hood, edge, 2.0)
+	for i in 4:
+		_eye(at + Vector2((-0.18 + 0.12 * float(i)), -0.60) * r, r * 0.05, T.DMG)
+
+
+## The Devourer: the boss. A maw ringed with teeth, tentacles framing the top of
+## the sigil. ENRAGE raises its attack every turn and the teeth are drawn open,
+## so the shape gains more of itself on the same schedule as the number does.
+func _devourer(at: Vector2, r: float, wash: Color, deep: Color, edge: Color) -> void:
+	for i in 2:
+		var k := float(i)
+		for s in [-1.0, 1.0]:
+			var root := at + Vector2(0.90 * s, -1.25 + 0.55 * k) * r
+			var tip := at + Vector2(0.12 * s, -0.52 - 0.34 * k) * r
+			var knee := root + (tip - root) * 0.55 + Vector2(0.46 * s, -0.10 * k) * r
+			enemy_sigil.draw_line(root, knee, deep, 5.0)
+			enemy_sigil.draw_line(knee, tip, deep, 3.5)
+	enemy_sigil.draw_circle(at, r * 0.72, wash)
+	enemy_sigil.draw_arc(at, r * 0.72, 0.0, TAU, 44, edge, 3.0)
+	for i in 10:
+		var a := TAU * float(i) / 10.0 - PI / 2.0
+		var d := Vector2(cos(a), sin(a))
+		enemy_sigil.draw_colored_polygon(PackedVector2Array([
+			at + d * r * 0.50, at + d * r * 0.96, at + d.rotated(0.40) * r * 0.70]), wash)
+	enemy_sigil.draw_circle(at, r * 0.38, Color(edge.r, edge.g, edge.b, 0.5))
+	for i in 6:
+		var a := TAU * float(i) / 6.0
+		_eye(at + Vector2(cos(a), sin(a)) * r * 0.21, r * 0.05, edge)
+
+
+## The Grunt and the Bracer: a small horned thing. It has to read as the
+## cheapest thing on the board -- no plate, no teeth, no tendrils -- because it is
+## the enemy a player meets first and again on every single run.
+func _imp(at: Vector2, r: float, wash: Color, deep: Color, edge: Color) -> void:
+	for s in [-1.0, 1.0]:
+		enemy_sigil.draw_colored_polygon(PackedVector2Array([
+			at + Vector2(0.20 * s, -0.52) * r, at + Vector2(0.54 * s, -1.02) * r,
+			at + Vector2(0.58 * s, -0.28) * r]), deep)
+	var body := PackedVector2Array([
+		at + Vector2(0.0, -0.56) * r, at + Vector2(0.62, -0.06) * r,
+		at + Vector2(0.40, 0.62) * r, at + Vector2(-0.40, 0.62) * r,
+		at + Vector2(-0.62, -0.06) * r])
+	enemy_sigil.draw_colored_polygon(body, wash)
+	_outline(body, edge)
+	for s in [-1.0, 1.0]:
+		_eye(at + Vector2(0.20 * s, -0.16) * r, r * 0.07, edge)
+
+
+## The idle loop, started once per fight. A standing enemy that never moves is
+## the cheapest way to make a fight screen read as a screenshot of a
+## spreadsheet, and this is one tween on one float rather than one per enemy.
+func _start_breathing() -> void:
+	if _breath_tween != null:
+		return
+	_breath_tween = create_tween().set_loops()
+	_breath_tween.tween_method(_set_breath, 0.0, 1.0, 1.6)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_breath_tween.tween_method(_set_breath, 1.0, 0.0, 1.6)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _set_breath(v: float) -> void:
+	_breath = v
+	if enemy_sigil != null:
+		enemy_sigil.queue_redraw()
+
+
+## A red wash over the whole panel. The floating number says how much; this says
+## *you*, and it is the only cue that survives a player who is watching the dice
+## instead of the bar. Heavy hits only -- on every hit it is a strobe.
+func _flash_screen(colour: Color = T.HP, peak: float = 0.32) -> void:
+	if _flash_rect == null:
+		_flash_rect = ColorRect.new()
+		_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(_flash_rect)
+	_flash_rect.color = Color(colour.r, colour.g, colour.b, peak)
+	create_tween().tween_property(_flash_rect, "color:a", 0.0, 0.36)
+
+
+## Which icon a die face wears. A face has three numbers and no fourth stat, so
+## the skull has no face to sit on -- there is no hex on a die, a curse is an
+## enemy behaviour -- and it is drawn on the Hexweaver instead. The order matches
+## `theme.gd`'s `face_colour` deliberately: colour and icon must never disagree
+## about what a face is for.
+static func icon_kind(dmg: int, block: int, rerolls: int) -> int:
+	if dmg > 0:
+		return 1
+	if block > 0:
+		return 2
+	if rerolls > 0:
+		return 4
+	return 0
+
+
+## The die tile itself, drawn under the labels.
+##
+## StyleBoxFlat cannot do this and that is the whole reason it is `_draw`: one
+## box, one border colour, one fill. A bevel needs a lit top-left edge and a
+## shadowed bottom-right edge on the *same* face, and the only way to get both is
+## to paint them. Which is also why the card's own styleboxes go transparent --
+## otherwise whether the bevel survived at all would depend on whether Button
+## draws its stylebox before or after the script's `draw`, and that is not a
+## thing a reader of this file should have to know.
+func _draw_die(i: int) -> void:
+	var s := cards[i].size
+	if s.x < 14.0 or s.y < 14.0:
+		return
+	var jewel: Color = card_jewel[i] if i < card_jewel.size() else T.BORDER
+	var fill: Color = card_fill[i] if i < card_fill.size() else T.CARD
+	# The cast shadow first: a bevelled tile has to sit on something or it reads
+	# as a sticker. Down and to the right, which is where a light at the top left
+	# would put it.
+	var shadow := Rect2(Vector2.ZERO, s).grow(2.0)
+	shadow.position += Vector2(0, 5)
+	draw_style_box(T.flat(Color(0, 0, 0, 0.36), Color(0, 0, 0, 0), 0, T.RADIUS), shadow)
+	draw_style_box(T.flat(fill, jewel, 2, T.RADIUS), Rect2(Vector2.ZERO, s))
+	# Two facets are the whole of the bevel.
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(3, 3), Vector2(s.x - 3, 3), Vector2(s.x - 11, s.y * 0.54),
+		Vector2(11, s.y * 0.44)]), Color(1, 1, 1, 0.055))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(7, s.y * 0.64), Vector2(s.x - 9, s.y * 0.58),
+		Vector2(s.x - 3, s.y - 3), Vector2(3, s.y - 3)]), Color(0, 0, 0, 0.17))
+	# The gem inset: a hairline just *inside* the rim, in the face's own colour.
+	# This is the jewelled border the rebirth plan asks for, and it reads as a
+	# set stone rather than an outline precisely because it is not on the edge.
+	# The palette is already the plan's -- crimson/sapphire/amethyst/amber are
+	# theme.gd's DMG, BLOCK, REROLL and GOLD, so no colour was invented here.
+	draw_rect(Rect2(Vector2(5, 5), s - Vector2(10, 10)),
+		Color(jewel.r, jewel.g, jewel.b, 0.30), false, 1.0)
+	# The glint: the chamfer catching light along the two lit edges.
+	var lit := jewel.lightened(0.38)
+	draw_line(Vector2(3, s.y - 4), Vector2(3, 3), lit, 2.0)
+	draw_line(Vector2(3, 3), Vector2(s.x - 4, 3), lit, 2.0)

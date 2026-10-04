@@ -18,8 +18,10 @@ const MUSIC_FADE := 1.2  ## seconds, split evenly either side of the swap
 
 ## Sound effects, synthesised by `_mksfx.py` rather than generated. FlowMusic is
 ## a music model and ignores `duration` -- a 5s request comes back at two minutes
-## -- so it cannot make a 200ms die-clack. Procedural costs 43KB for all seven,
-## has no licence, and lands exactly on the event that asked for it.
+## -- so it cannot make a 200ms die-clack. Procedural costs 46KB for all seven
+## (46,338 bytes, `ls -l audio/*.ogg` less the two beds, 2026-09-29 -- the table
+## below was written alongside it and said 43, which was never the size of this
+## set), has no licence, and lands exactly on the event that asked for it.
 const SFX := {
 	"roll": preload("res://audio/roll.ogg"),
 	"tap": preload("res://audio/tap.ogg"),
@@ -48,10 +50,19 @@ const SFX := {
 ##   lose     -1.5   -15.7     --    -22.7                         4.8 over
 ##   combat   -1.6   -18.5   -18.7   -27.5   the bed itself
 ##
-## Eight of the ten call sites land over the bed; only the two rolls land under
+## Ten of the twelve call sites land over the bed; only the two rolls land under
 ## it, and the re-rolled one is 7.6dB under, because fight.gd passes vol:-6 to
 ## keep it tellable from the opening clatter. That was chosen relative to the
 ## other roll and never against the bed, so the two margins multiplied.
+##
+## "Twelve", and it used to say "eight of the ten". That was fight.gd's ten
+## counted alone: `_sfx` is the fight's own helper, so the two `play_sfx` calls
+## further down this file were not in the sentence and it read as a claim about
+## the project. Both of them -- `win` and `lose` -- are over the bed, which is
+## what the table's last column says about them and is not a guess: both fire
+## before `show_end` runs, so the swap to the menu bed at `_swap`'s default
+## argument has not started yet and the combat bed is still up. Ten over, two
+## under, out of twelve.
 ##
 ## None of it is tuned blind. The last column is desktop RMS and does not
 ## predict a phone: the bed is almost entirely below 1kHz and the clatters are
@@ -348,9 +359,16 @@ func _die_chip(d: Rules.Die, held: bool, owned: bool, width: int) -> Button:
 	b.add_child(stack)
 
 	# MUTED, not FAINT, for the same reason as the die card: this is the die's
-	# name, the one thing the row has to communicate. 4.70:1 on the card, against
-	# FAINT's 2.44:1. The LOCKED caption and border below it keep FAINT -- those
-	# are meant to recede.
+	# name, the one thing the row has to communicate. The LOCKED caption and
+	# border below it keep FAINT -- those are meant to recede.
+	#
+	# No ratio is quoted here on purpose. This label lands on CARD_HI too -- the
+	# row is CARD_HI while the die is IN HAND and again on hover -- so a number
+	# written beside "the card" is a number about the wrong surface, which is the
+	# exact mistake the die card's own comment above records. `_contrast` in
+	# test.gd holds the one that matters and recomputes it from the palette; this
+	# note holds the reason, so a colour change cannot leave the reasoning here
+	# quietly true and the arithmetic beside it quietly false.
 	var name_l := _label(stack, d.title.to_upper(), T.F_TINY, T.MUTED)
 	var value_l := _label(stack, str(value) if value > 0 else "--", T.F_TITLE, tint)
 	value_l.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -460,7 +478,7 @@ func show_reward(offers: Array) -> void:
 	var col := _column(40, 40)
 	_label(col, "VICTORY", T.F_TINY, T.FAINT)
 	_label(col, "Take one", T.F_DISPLAY, T.GOLD)
-	_label(col, "depth %d of %d" % [run.depth + 1, RunState.FINAL_DEPTH + 1],
+	_label(col, "depth %d of %d" % [RunState.depth_no(run.depth), RunState.FINAL_DEPTH + 1],
 		T.F_SMALL, T.MUTED)
 	col.add_child(_spacer(16))
 
@@ -470,7 +488,6 @@ func show_reward(offers: Array) -> void:
 
 func _reward_card(o: Dictionary) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(0, 100)
 	b.add_theme_stylebox_override("normal", T.flat(T.CARD, T.BORDER, 1, T.RADIUS))
 	b.add_theme_stylebox_override("hover", T.flat(T.CARD_HI, T.GOLD, 2, T.RADIUS))
 	b.add_theme_stylebox_override("pressed", T.flat(T.CARD_HI, T.GOLD_DARK, 2, T.RADIUS))
@@ -489,12 +506,27 @@ func _reward_card(o: Dictionary) -> Button:
 
 	_label(stack, str(o["name"]), T.F_TITLE, T.TEXT, HORIZONTAL_ALIGNMENT_LEFT)
 	_label(stack, str(o["desc"]), T.F_SMALL, T.MUTED, HORIZONTAL_ALIGNMENT_LEFT)
+
+	# 100 held only while the two labels came to 72 + 4 + 42 = 118; the card is a
+	# Button, so it is not a Container and does not grow for the stack hung
+	# inside it, and `stack` is anchored to the card rather than laid out by it,
+	# so Godot clamps the stack *up* to its own minimum and the description
+	# hangs 32px off the bottom of the card. It cannot be derived from the
+	# content instead: `_reward_card` runs before `show_reward` adds the card to
+	# anything, and a Label outside the tree has resolved no font, so
+	# `stack.get_combined_minimum_size()` answers (0, 0) -- deferred as well, by
+	# the time it fires the layout that produced 72 and 42 has not run yet.
+	# So this is a literal like `dice_row`'s 186 and `enemy_sigil`'s 132, sized
+	# from the measured label heights plus the 14px insets above and below.
+	# `shot.gd` prints every label's rect when this check fails, so a longer
+	# description re-opening the hole is visible from the failure line.
+	b.custom_minimum_size = Vector2(0, 146)
 	return b
 
 
 ## Both endings share a shape: headline, a run summary, one button out.
 func show_end(victory: bool, is_best: bool) -> void:
-	var reached := mini(run.depth + 1, RunState.FINAL_DEPTH + 1)
+	var reached := RunState.depth_no(run.depth)
 	var col := _column(48, 40)
 
 	col.add_child(_spacer(50))
@@ -511,7 +543,7 @@ func show_end(victory: bool, is_best: bool) -> void:
 	else:
 		_label(col, "You reached depth %d of %d." % [reached, RunState.FINAL_DEPTH + 1],
 			T.F_BODY, T.MUTED)
-		_label(col, "The Devourer waits at depth %d." % RunState.FINAL_DEPTH,
+		_label(col, "The Devourer waits at depth %d." % RunState.depth_no(RunState.FINAL_DEPTH),
 			T.F_SMALL, T.MUTED)
 
 	col.add_child(_spacer(20))
@@ -581,14 +613,14 @@ func _on_fight_won() -> void:
 	if run.at_boss():
 		run.won = true
 		play_sfx("win")
-		show_end(true, RunState.record_run(RunState.FINAL_DEPTH + 1, true, pool))
+		show_end(true, RunState.record_run(RunState.depth_no(RunState.FINAL_DEPTH), true, pool))
 		return
 	show_reward(run.roll_rewards(rng))
 
 
 func _on_fight_lost() -> void:
 	_absorb_fight()
-	var reached := mini(run.depth + 1, RunState.FINAL_DEPTH + 1)
+	var reached := RunState.depth_no(run.depth)
 	play_sfx("lose")
 	show_end(false, RunState.record_run(reached, false, pool))
 

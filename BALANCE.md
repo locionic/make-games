@@ -15,7 +15,15 @@ improve the game by adding cards made the measured win rate worse:
 | 8 cards | 12.7% |
 | 14 cards incl. downsides | 2.7% |
 | 12 cards incl. dominated | 7.3% |
-| 9 cards (shipped) | 12.0% |
+| 9 cards (the pool on 2026-09-29) | 12.0% |
+
+**(shipped) was removed from that row, and it was wrong.** The pool is 12
+entries: `run.gd`'s `UPGRADES` has twelve, and `_balance.gd` measures twelve
+strategies by name. The nine-card row was the shipped one when this was written,
+and the three archetype cards landed the next day (the 2026-09-30 item below).
+Nothing updated the label, so a later run reading "9 cards (shipped)" would size
+the live table off a nine-card row — and the sizes are not interchangeable:
+`12 → 7.3%` is a row in the table above.
 
 Adding cards without distinct mechanics is a regression. That is the whole
 reason a gate exists.
@@ -35,14 +43,26 @@ dud, and that dud density was holding the floor down.
 This also explains the table above, and corrects the reading of it. **Downside
 density, not card count, is the lever.** The two pools with downsides (14 → 2.7%,
 12 → 7.3%) are both far harder than the two without (8 → 12.7%, 9 → 12.0%),
-even though the *smaller* pool is one of the easy ones. The shipped 9-card table
+even though the *smaller* pool is one of the easy ones. That 9-card table
 is a tuned difficulty setting, and every card in it is load-bearing for that,
 including the ones that measure worst.
 
+> **"The shipped 9-card table" was not shipped, and the sentence reads as a
+> standing instruction not to touch a card.** It was accurate on 2026-09-29 and
+> the pool is 12 now. It matters more than a stale number: "every card in it is
+> load-bearing" is a directive to a later unattended run, and applied to the
+> live 12-card pool it would forbid exactly the work the 2026-09-30 item asks
+> for — `GAMBLERS_RUSH` and `BASTION_HOLD` measure at or below `<random>` and
+> that item calls them "the open item, not a tuning one". The claim holds of the
+> nine cards it was measured on and of nothing added since.
+
 The corollary that matters: **a below-random card is not evidence that the card
 is bad.** It is evidence that the table is at the difficulty it is at. Do not
-retire the sub-random cards — MEND, BLESS, FOCUS and VIGOR are all below
-random, and the two that were tried behaved as predicted.
+retire the sub-random cards, and only two of the four named here are still
+sub-random: FOCUS and VIGOR. MEND and BLESS measure *above* the 18.0% control
+(18.5% and 19.9%), which is the same finding item 3 reached for BLESS at
+p = 0.0027 — so this sentence and that entry have been contradicting each
+other, and the entry was right. The two that were tried behaved as predicted.
 
 The same shape has now been caught twice in `dice.gd`, so read it as the general
 law rather than a fact about cards: **any flat bonus to output is a flat bonus
@@ -208,14 +228,17 @@ kind of number here that no sample size can rescue.
 > — but nothing in this file says which patch produced them, and that is the one
 > thing this file is supposed to guarantee.
 >
-> **`dice.gd:602` is the wrong line.** It is a comment — *"card pay for itself
-> the turn it was taken"* — inside `resolve_faces`, about Exposed being applied
-> after the damage. The clamp is at **`dice.gd:610`**.
+> **`dice.gd:602` is the wrong line, and the wrong line is no longer the one
+> this paragraph describes.** It is real code — the `GAMBLERS_RUSH` payout, which
+> was not there when this was written. The line it meant to correct is still
+> there and is still a comment: *"card pay for itself the turn it was taken"*,
+> inside `resolve_faces`, about Exposed being applied after the damage. The clamp
+> is in the same resolve, a few lines below it.
 >
 > **"The single line" is not single.** `enemy.hp = 0` appears twice, each inside
-> its own `if enemy.hp <= 0:`: **`dice.gd:610`**, the player's damage path, and
-> **`dice.gd:640`**, the thorns path on the enemy's turn. The second is
-> reachable — `thorns > 0` is what BULWARK grants (`run.gd:274`, `thorns += 4`)
+> its own `if enemy.hp <= 0:` — once on the player's damage path and once on the
+> thorns path during the enemy's turn. The second is
+> reachable — `thorns > 0` is what BULWARK grants (`thorns += 4` in its arm)
 > and BULWARK is in the pool — so deleting only the first leaves a clamp in
 > place and the patch is under-specified rather than minimal.
 >
@@ -394,6 +417,27 @@ Three numbers define "better":
 - **avg depth** — baseline `7.69`. If a change moves wins but not depth, it
   mostly shifted which fight kills you, not whether you finish.
 
+> **All three are stale, and this block predicted it would be.** It says to
+> "restamp this block in the same commit as any change to the rules", and the
+> rules have changed since it was written — MEND's heal and the Golem's armour
+> ceiling both landed as fixes after this was stamped. Re-measured today against
+> this tree:
+>
+> | | documented | measured | |
+> |---|---|---|---|
+> | random win% | 16.4% | **18.0%** | +1.6, at the top of the 8–18% band |
+> | avg depth | 7.69 | **7.93** | +0.24, and the 7.6 floor has less room than it had |
+> | best/random (ADD_DIE) | 1.49x | **1.55x** | 27.9% over 18.0% |
+>
+> Left unrestamped deliberately. The block's own rule says to restamp it, but a
+> baseline is what the *next* change is measured against, and restamping onto
+> 18.0% spends the band's headroom rather than reporting it: random win% is
+> criterion 2, and it would then be pinned to the ceiling of its own acceptance
+> band with zero room above it. That is a call about which number the game should
+> be balanced from, not a documentation fix, so the drift is recorded and the
+> decision left open. Depth moving *up* while wins move up too is the one thing
+> here that is unambiguously good news.
+
 **The ratio's own baseline moved, and the pool moved it.** This block used to
 read `2.0x` off BULWARK over a random at 12.0%, on nine cards. The pool is
 twelve cards now and `<random>` is 16.4%, so the same arithmetic reads `1.49x`
@@ -450,14 +494,27 @@ A change is kept only if **all** of these hold after the full suite passes
 > **This gate's own pass condition was three-quarters fiction, checked
 > 2026-09-30.** It used to require the suite to print `dice.self_test: OK`,
 > `run.self_test: OK`, `9 scripts load`, `reached end`. Three of those four
-> strings do not exist and never have for some time: the per-script lines are
-> `dice.self_test: 8392 checks, 0 failed` and `run.self_test: 8469 checks,
-> 0 failed`, and the script count is **11**, not 9. Only `reached end` still
-> appears. So the one place in this document that says what "green" means was
-> describing an older `test.gd`, and a person following it literally would grep
-> for `OK`, find nothing, and have no way to tell a broken suite from a changed
-> output format — which is the exact ambiguity that makes a red build
-> shippable.
+> strings do not exist and never have for some time: the per-script lines
+> report a check count, not `OK`, and the script count is **11**, not 9. Only
+> `reached end` still appears. So the one place in this document that says what
+> "green" means was describing an older `test.gd`, and a person following it
+> literally would grep for `OK`, find nothing, and have no way to tell a broken
+> suite from a changed output format — which is the exact ambiguity that makes
+> a red build shippable.
+>
+> **The repair reintroduced the thing it was repairing, and both numbers have
+> already gone stale a second time.** The first fix replaced the two `OK`
+> strings with the counts they had become — `8392` and `8469` — which is a
+> hand-maintained copy of a number the program prints, on the four lines below
+> this one that say *"do not hand-maintain a number the program already
+> prints"*. As of 2026-10-02 they read `dice.self_test: 8420 checks, 0 failed`
+> and `run.self_test: 8531 checks, 0 failed`. **They are now written as a dated
+> example rather than as the condition**, because the condition they were
+> standing in for is the exit code and the stable format, and neither of those
+> drifts. The failure is the one this file has now recorded three times: fixing
+> a stale number by writing down a fresher one moves the staleness, it does not
+> remove it, and a number in a *pass condition* is read far more often than a
+> number in a measurement.
 >
 > The fix is deliberately not "correct the three strings". Every one of them is
 > a thing that drifts: the two counts change whenever a check is added, and
@@ -493,11 +550,20 @@ A change is kept only if **all** of these hold after the full suite passes
 > the last run scored" — that would make the gate unfailable by a card that does
 > nothing. This is a change to what passing means, so it is stated here rather
 > than buried: **a card now passes criterion 1 by beating 1.49x, which today
-> means beating 24.4% wins.** The number moves every time the pool does, and —
+> means beating 26.8% wins.** The number moves every time the pool does, and —
 > measured 2026-09-30 — it also moves when a single face is retuned, so the
 > 1.49x above and the 1.48x in this paragraph are not a contradiction: the
 > re-anchor was made at 16.5% and item 7 then moved random to 16.4%.
-> **24.4% is the live threshold and it is correct under both.**
+>
+> **That percentage was wrong, and it was the half in a pass condition.** It
+> read 24.4%, which is the best card as it stood when random was last at 16.4%
+> — at the measured 18.0% that is 1.36x, which *fails* the criterion it is the
+> percentage form of, so it is recomputed above from the written anchor. The
+> Baseline block also records the live ratio as 1.55x, so the two forms still
+> name different baselines; which one is right is the same open restamp as the
+> Baseline, and is left with it. What is no longer left open is the arithmetic:
+> `_balance.gd`'s `_gate_ratio` now reads both forms out of this file and fails
+> when they disagree, so the pair cannot come apart again.
 
 Otherwise revert and record why. The 8–18% band is the part that matters most:
 a roguelike that a blind player wins 12% of the time is about right, and
@@ -1117,10 +1183,11 @@ and bounded, so the card taxes the plentiful currency to buy the scarce one.
 > it reads, because the policy cannot express the mechanic's best use.
 > `_spend_all_focus` spends every charge on the biggest immediate gain, and
 > `focus_left` **carries across turns**: `roll_all` refills `rerolls_left` and
-> leaves focus alone — `dice.gd:892` asserts it outright ("a roll does not refill
-> the focus charges"). A run grants it once at `run.gd:146`, so
+> leaves focus alone — a check asserts it outright ("a roll does not refill
+> the focus charges"). A run grants it once, in `start_fight`'s
+> `enc.focus_left = base_focus`, so
 > with `base_focus = 1` a player may hold the single charge for the turn the hit
-> is worth saving it for. The Devourer is the clean case: `run.gd:136` gives it
+> is worth saving it for. The Devourer is the clean case: the enemy ladder gives it
 > `atk 9` and `BEH_ENRAGE`, which is `+1` a turn (`dice.gd:154`), so its fourth
 > enemy turn telegraphs 12 — and the bot has no way to represent the choice.
 > `dice:nudge` is therefore a **lower** bound on what Focus is worth, and using it
@@ -1135,7 +1202,8 @@ and bounded, so the card taxes the plentiful currency to buy the scarce one.
 > single fight runs, which is the direction the measurement went. "Effectively
 > unbounded" is not wrong so much as unmeasured — no fight length is recorded
 > anywhere in this file, and the baseline's `7.69` cannot stand in for one:
-> depth is fights cleared, not turns taken (`_balance.gd:11`). An unmeasured
+> depth is fights cleared, not turns taken (`run.gd`'s `FINAL_DEPTH`, whose own
+> comment reads "fights at depth 0..7, the boss at FINAL_DEPTH"). An unmeasured
 > word in a diagnosis is how the first attempt got repriced around instead of
 > cut.
 
@@ -1238,3 +1306,57 @@ right and the fixture was wrong:
   which pays on the next resolve, not this one.
 
 Ten consecutive runs, all nine screenshots, no asserts.
+
+- 2026-09-30 **item 8, paired face on an acquired die** — **KEEP**. `Face.pairs`
+  added in `dice.gd`; Fang's `5` carries the flag and doubles to 10 while another
+  die shows 5. `Encounter.pair_bonus`/`face_hit` own the rule (only the class
+  holding every die can see the other dice), `resolve_faces` pays it through
+  `face_hit` in both the normal path and the hold's cash, `Die.forge` carries
+  the flag across REFORGE, and `fight.gd` prints the doubled number on the card.
+  Measured, N=1000, same seeds as every row above:
+
+  | row | before | after | Δ |
+  |---|---|---|---|
+  | **`<random>`** | **15.9%** | **16.5%** | **+0.6** |
+  | avg depth | 7.68 | 7.69 | +0.01 |
+  | best (ADD_DIE) | 23.3% | 24.5% | +1.2 |
+  | PRECISE_STRIKE | 18.8% | 19.5% | +0.7 |
+  | BULWARK | 18.3% | 18.5% | +0.2 |
+  | SHARPEN | 17.9% | 19.0% | +1.1 |
+  | dice:nudge | 24.8% | 25.0% | +0.2 |
+  | dice:reach | 20.4% | 20.7% | +0.3 |
+  | BASTION_HOLD+bank | 1.3% | 1.1% | −0.2 |
+  | `<rand>+bank` | 1.4% | 1.3% | −0.1 |
+
+  Gate (rules clause): random `16.5%` in the 8–18% band, **+0.6** against a 3-point
+  allowance, depth `7.69` over the `7.6` floor, suite green. **All clauses pass.**
+
+  **Read the result as neutral, not as support.** se at 16% on n=1000 is 1.17
+  points, so +0.6 is 0.5 se and every Δ above is inside 1 se. The bench is
+  saying the mechanic does not move difficulty, which is the entire point of
+  putting the face on an acquired die — and the one number worth carrying: the
+  *same* mechanic on a starter (item 6) moved random +3.3 points, so moving it
+  off a starter moved a 3.3-point difficulty add to a 0.6-point one. The failure
+  mode in item 6 was designed out and the design out is measured.
+
+  Two things the bench cannot say, and neither is claimed here. It cannot say
+  the mechanic is *good* — every `dice:read`/`reach`/`nudge` policy in this file
+  is a heuristic I wrote, and this is the same caveat with a die instead of a
+  policy. And the interesting property is not in the table at all: Fang's 5
+  doubled lands exactly on `EXPOSE_AT`, so a pair is a route into Exposed that
+  does not run through SHARPEN, which is what makes it a second route into the
+  flat half of the pool for a player who spent a pick on this die. That is
+  asserted in `_pair_tests` (a doubled 5 sets `exposed`) because the *bench*
+  cannot see it — the greedy bot never takes both PRECISE_STRIKE and Fang, and
+  the face had to be `5` rather than `11` for the claim to be true, since 22 is
+  over every armour in the roster and is a flat power add.
+
+  **Note for the next run, updated: the "Baseline" block above now reproduces.**
+  It did not when this entry was written — it described the 9-card pool at
+  random 12.0% against a shipped 12-card table — and that is why the numbers in
+  this entry are the before/after rather than a shared baseline. The block has
+  since been re-measured on the current pool (random 16.4%, best 24.4%, ratio
+  1.49x, N=1000) and criterion 1 was re-anchored with it. The 15.9% figures
+  *inside* this entry stay as they are: that was the correct random row for the
+  measurement this item actually made, and rewriting a dated number to match
+  today's pool would be falsifying it.

@@ -18,7 +18,10 @@ const CARD_HI := Color("#2b3145")
 const BORDER := Color("#333a4d")
 
 const TEXT := Color("#f0f3f8")
-const MUTED := Color("#8892a8")
+const MUTED := Color("#949eb2")   ## secondary text, and it has to clear 4.5:1 on
+                                   ## CARD_HI, not just on CARD -- that is the fill a
+                                   ## die card takes when it is armed, picked or hovered.
+                                   ## See `test.gd`'s `_contrast`.
 const FAINT := Color("#5a6379")
 
 const GOLD := Color("#ffc24b")      ## primary action
@@ -190,12 +193,3 @@ static func face_colour(dmg: int, block: int, rerolls: int) -> Color:
 	if rerolls > 0:
 		return REROLL
 	return MUTED
-
-
-## A die card, tinted by what the face does. `picked` lifts it in green.
-static func card_style(dmg: int, block: int, rerolls: int, picked: bool, spent: bool) -> StyleBoxFlat:
-	if picked:
-		return flat(CARD_HI, PICK, 2, RADIUS)
-	if spent:
-		return flat(PANEL, BORDER, 1, RADIUS)
-	return flat(CARD, face_colour(dmg, block, rerolls), 2, RADIUS)

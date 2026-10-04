@@ -31,7 +31,7 @@ const AXIS := {
 	"ADD_DIE": "pool",          ## grows the hand -- its own thing, neither of these
 	"SHARPEN": "damage",         ## +1 to a damage face
 	"PIERCE": "damage",          ## ignores 1 armour
-	"REFORGE": "damage",        ## raises the weakest face
+	"REFORGE": "damage",        ## raises one die's worst face, at random
 	"PRECISE_STRIKE": "damage",  ## a 10+ hit applies Exposed
 	"BLESS": "defence",          ## +1 to a block face
 	"VIGOR": "defence",          ## +8 max health
@@ -46,11 +46,21 @@ const AXIS := {
 # all eight depths actually sees (the offer sequence depends only on the picks,
 # not on the fights, so walking it is exact rather than an approximation):
 #
-#   45.8% of offers span three distinct axes, 54.2% carry a repeat,
-#   and the repeats are damage 2011 / defence 1971 / gamble 357. Those three
-#   sum to 4339 exactly, which is the check that the counter is honest: with
+#   49.0% of offers span three distinct axes, 51.0% carry a repeat,
+#   and the repeats are damage 2378 / defence 1236 / gamble 462. Those three
+#   sum to 4076 exactly, which is the check that the counter is honest: with
 #   three cards an axis can repeat at most once and only one axis can, so the
-#   three counts must add to the number of offending offers. They do.
+#   three counts must add to the number of offending offers. They do -- and
+#   `_axis_report` now checks that rather than leaving it to the reader, which
+#   is what it used to be.
+#
+# Re-measured 2026-10-01. This said 45.8% / 54.2% over damage 2011 / defence
+# 1971 / gamble 357, which was true until the two reward clamps landed -- both
+# change which cards an offer is allowed to contain, so the histogram moves
+# with them and defence fell 735 while damage rose 367. The run prints the
+# histogram above its own table, so this paragraph is where to look rather
+# than what to trust: the two disagreed silently for the whole time between
+# the clamps and now.
 #
 # So the rule is a coin flip that nothing enforces: `roll_rewards` draws three
 # uniformly at random and whether they span three axes is left to chance. It is
@@ -64,13 +74,20 @@ const AXIS := {
 #
 # Which is the argument for NOT enforcing it, and the reason is in the table
 # above rather than in a preference. A repeated-axis offer is still a real
-# choice, because cards on the same axis are not interchangeable: the damage
-# axis spans 8.3% (REFORGE) to 19.5% (PRECISE_STRIKE), an 11.2-point spread
-# that is wider than the gap between most pairs of cards on different axes.
-# Defence spans 5.2 and gamble 0.5. Forcing three distinct axes would delete
-# exactly those choices -- 54.2% of the time it would take an offer containing
-# PRECISE_STRIKE against REFORGE, a real 11-point decision, and hand back one
-# with nothing in it.
+# choice, because cards on the same axis are not interchangeable. Reading the
+# per-card wins% off the table (2026-10-01): the damage axis spans 9.3%
+# (REFORGE) to 20.6% (PRECISE_STRIKE), an 11.3-point spread that is wider than
+# the gap between most pairs of cards on different axes. Defence spans 4.1
+# (VIGOR 17.7 to BULWARK 21.8) and gamble 1.2 (FOCUS 10.5 to GAMBLERS_RUSH
+# 11.7). Forcing three distinct axes would delete exactly those choices -- in
+# 51.0% of offers -- taking one containing PRECISE_STRIKE against REFORGE, a
+# real 11-point decision, and handing back one with nothing in it.
+#
+# The argument is unaffected by the clamps; the numbers above them are not, and
+# that is why the card-axis spreads are quoted here rather than asserted. The
+# conclusion rests on damage staying much wider than the other two, and it is
+# 11.3 against 4.1 and 1.2 -- the shape survived even though three of the five
+# figures it was argued from did not.
 #
 # The rule worth having instead is a dominance rule: no card on offer may be
 # strictly worse than another card on offer, so every card the player sees is
@@ -159,11 +176,17 @@ func _go() -> void:
 	# what it was built to do.
 	#
 	# Which is the problem. It is break-even without armour and dominant with
-	# it, and the roster carries armour on seven of nine enemies with two of
-	# them growing into the 12 cap, so the answer is "always sunder" nearly every
-	# turn of nearly every fight. Charging the sundered die its block was the one
-	# cost tried, on the theory that a die spent on wounding is not bracing: the
-	# bench came back at 31.2%, above the 30.2% it was meant to pull down. Not
+	# it, and the roster carries armour on eight of its nine enemies -- all of
+	# them but the Grunt, whose 0 is the only zero in the table -- with three of
+	# those eight able to grow into the 12 cap: Rust Golem and Stone Sentinel by
+	# BEH_ARMOR_GROW, Ironhide by BEH_BRACE, which shares the cap. So the answer
+	# is "always sunder" nearly every turn of nearly every fight. This said
+	# "seven of nine ... with two of them", which was wrong twice: it discounted
+	# Bloodletter's armour of 1, which `pierce()` spends like any other, and it
+	# counted only the two behaviours whose name grows. Both counts are pinned
+	# by `run.gd`'s self_test now. Charging the sundered die its block was the
+	# one cost tried, on the theory that a die spent on wounding is not bracing:
+	# the bench came back at 31.2%, above the 30.2% it was meant to pull down. Not
 	# because the cost is free -- because a policy ranking on both axes picks
 	# better targets. (The damage-only policy could not see the cost at all: it
 	# skips any die with no damage face, so it never once sundered a Ward and
@@ -240,7 +263,7 @@ func _go() -> void:
 	# --- PLAN.md 2.2's other two items, measured with the per-depth line ---
 	#
 	# Paired faces are already shipped -- `Face.pairs` on Fang's `5`,
-	# dice.gd:309, covered by `_pair_tests`. What had never been priced is the
+	# dice.gd:382, covered by `_pair_tests`. What had never been priced is the
 	# flag, because ADD_DIE is a lottery: `apply_upgrade` draws one of the three
 	# `Encounter.bonus_dice()` at random, so every ADD_DIE row above is the
 	# average of three different dice and cannot say which one is carrying it.
@@ -373,6 +396,7 @@ func _go() -> void:
 	# unless it can fail, and this one could not.
 
 	_axis_report()
+	_plan_cards()
 
 	print("strategy        wins%   avg depth   max")
 	# Collected for the check at the bottom: the twelve single-card rows and
@@ -436,6 +460,21 @@ func _go() -> void:
 					wins += 1
 					break
 				r.depth += 1
+				# The run loop's own bound, so the depth check above is a report
+				# rather than the only thing standing between a stranded run and
+				# a gate that says nothing. Disabling `at_boss()` to find out
+				# what that check actually catches was the experiment: the gate
+				# stopped completing -- 240s against a 60s baseline, seven lines
+				# of output, not one failure -- because `at_boss()` is the only
+				# thing limiting `depth`. The bound is `FINAL_DEPTH + 1` and not
+				# `FINAL_DEPTH` deliberately: the check reads `r.depth + 1` at
+				# the top of the next iteration, so breaking on the overshoot
+				# itself skips the one iteration that reports it, and the first
+				# version of this line did exactly that and passed green on a
+				# build that could never win a fight. One extra pass lets the
+				# check go red, and then the loop stops.
+				if r.depth > RunState.FINAL_DEPTH + 1:
+					break
 				var offer = r.roll_rewards(rng)
 				if offer.is_empty():
 					continue
@@ -556,11 +595,16 @@ func _go() -> void:
 	# anywhere in the repo -- `grep -rn "2\.0x\|skill.to.random" *.gd` returns
 	# only "512x512" -- so the phase recorded a target it never measured and
 	# every run since has been silent about it. Measured now, and deliberately
-	# NOT gated: the best policy is dice:nudge at 1.55x the control, which is
-	# under the bar, so a hard check would be red on every run and would teach
-	# the reader to ignore this gate entirely. The number is printed instead,
-	# and whether 1.55x is the skill ceiling the design wants is the owner's
-	# call, not something to re-tune to fit a sentence in a plan.
+	# NOT gated: the best policy lands well under the bar, so a hard check would
+	# be red on every run and would teach the reader to ignore this gate
+	# entirely. The ratio is printed on the way out instead, which is also why it
+	# is not written down here. This paragraph used to say "dice:nudge at 1.55x"
+	# and "whether 1.55x is the skill ceiling", and the run has printed 1.46x
+	# since the two card clamps landed -- PLAN.md records that move (1.55x ->
+	# 1.46x), so the file that prints the number was the one place still
+	# asserting the old one. Whether the ratio a run reports is the skill ceiling
+	# this design wants is the owner's call, not something to re-tune to fit a
+	# sentence in a plan.
 	var best := ["", 0.0, 0.0]
 	for s in strategy:
 		if s[1] > best[1]:
@@ -570,7 +614,104 @@ func _go() -> void:
 			% [best[0], best[1] / control_wins, 100.0 * best[1], 100.0 * control_wins]
 			+ "and %.2fx its depth (%.2f vs %.2f). PLAN 2.1's bar is 2.0x."
 			% [best[2] / control_avg, best[2], control_avg])
-	quit(Check.report("_balance.gd"))
+
+	# The other criterion this file states in prose and measures on every run
+	# without ever saying so. `_reroll`'s docstring puts it plainly: "`read` is
+	# the row that is meant to carry the weight... `read` above `<random>` and
+	# the mechanic is real, `read` level with `<random>` and Ironhide is a stat
+	# block with extra words." Nothing gated it -- `grep -n "Check.check" ` over
+	# this file returned ten sites and none of them mentioned `read`, `<random>`
+	# or wins, so the sentence deciding whether a shipped mechanic is real had
+	# no more enforcement than the comment it lived in.
+	#
+	# Printed rather than gated, for the same reason the 2.0x ratio above is
+	# printed rather than gated, and the reason is measured here rather than
+	# assumed. Three seed bases, same code, nothing else changed:
+	#
+	#     7000   read 19.1%   random 18.0%    +1.1
+	#     47000  read 22.5%   random 18.4%    +4.1
+	#     91000  read 20.5%   random 18.1%    +2.4
+	#
+	# The sign holds on all three and the gap swings by four points, so the
+	# bar is met and is not yet safely met. A floor at +1 point is red roughly
+	# half the time for no reason -- the "permanently red, worse than none"
+	# this registry's own comment warns about, and the mistake `shot.gd` avoided
+	# by running nine times and *measuring* 766/767/767/766 before choosing a
+	# lower bound instead of an exact one. A floor at +0.5 would clear all
+	# three of today's samples and could go red on the fourth, which is worse
+	# than not gating: the output would read as Ironhide having stopped working
+	# when the real cause is which seeds the bench drew.
+	#
+	# The upgrade path is already half-built and is the only form of this
+	# number a gate should ever be given. The arms are paired -- `rng.seed =
+	# 7000 + i` is the same for every row -- so recording the per-trial win of
+	# both arms turns "+1.1 points" into the count of trials where they
+	# disagree, which is the signed error bar this lacks. Two independent
+	# proportions cannot be compared at N=1000 and a gap this size.
+	var read_wins := -1.0
+	for s in strategy:
+		if str(s[0]) == "dice:read":
+			read_wins = s[1]
+	# The print below is a measurement a comment above it calls decisive, so it
+	# gets the same guard `_axis_report` got: a rename of the row label makes the
+	# lookup miss, `read_wins` stays -1, and both prints are skipped with no
+	# failure anywhere. That is exactly how the whole PLAN.md 1.2 report once
+	# disappeared while the gate stayed green. One structural check, and it is
+	# the only new one here -- the verdict's value stays a report.
+	Check.check(read_wins >= 0.0,
+		"the `dice:read` row is still in the strategy table under that label, so the Ironhide verdict below has something to report")
+	if read_wins >= 0.0 and control_wins > 0.0:
+		print("_balance.gd: dice:read vs `<random>` is %+.1f points (%.1f%% vs %.1f%%)"
+			% [100.0 * (read_wins - control_wins), 100.0 * read_wins, 100.0 * control_wins])
+		print("  that is this file's bar for Ironhide being a mechanic and not a stat block: MET. Not gated -- the gap moved +1.1 to +4.1 across three seed bases, so any floor here is a coin flip. Read it, do not gate it.")
+	_gate_ratio()
+	# The floor is the same one test.gd uses, and it is NOT the live count --
+	# that was a bug, and the difference is the whole of this comment.
+	#
+	# `_axis_report` is called from here and a throw inside it aborts only that
+	# function, so this quit() runs and the gate exits 0 with the entire PLAN.md
+	# 1.2 report gone -- which is what happened until its AXIS lookups were made
+	# total. That is what a floor is for, and it needs to catch it.
+	#
+	# The live count was 167694, and 167640 of that came from one check that
+	# sits inside the run loop on purpose: `reached <= FINAL_DEPTH + 1` is
+	# asserted once per *fight*, not once per run, because the bound comment
+	# above explains that a per-run check skips the very iteration that reports
+	# an overshoot -- the first version passed green on a build that could never
+	# win a fight. Correct placement, and it makes the count a simulation
+	# statistic: how many fights 22000 runs happen to play.
+	#
+	# Measured, by moving the seed base and changing nothing else:
+	#
+	#     7000 (shipped)  ->  167695 checks, floor met (seeded, so stable)
+	#     47000           ->  167798
+	#     91000           ->  167663
+	#
+	# The 91000 row once read "32 short, EXIT 1" -- against a floor calibrated
+	# on the shipped row's own count. All three clear today's 22025 with room
+	# to spare, which is the floor working: the count is a statistic about
+	# seeds, not a count of checks that must run. A floor set on it is not a
+	# floor; re-roll the seeds and the gate goes red having found nothing. And
+	# it is *backwards*, because runs getting shorter is exactly what a balance
+	# change looks like, while staying green through every abort it was written
+	# to catch. A rebalance is not a broken gate, and the check at line 587 says
+	# as much when it refuses to gate on an absolute depth for the same reason.
+	#
+	# So the floor is the count that is structural on every seed, and nothing
+	# else: 20 from `_axis_report` and `_plan_cards` (12 axes, 1 histogram, 1
+	# heading, 3 PLAN.md 1.1 bullets, 3 prose checks), 3 from the verdict checks
+	# above, 2 from `_gate_ratio` on the two ways the doc states one ratio, and
+	# 22000 from the trial loop -- `rows.size() * N`, held up from below by the
+	# fact that `for i in N:` has no `break` in it and each run plays at least
+	# one fight. 20 + 3 + 2 + 22000 = 22025.
+	#
+	# That is a real loss of sensitivity and it is not free: a `break` added to
+	# the trial loop would shrink the bench without turning this red. It is
+	# still the right trade, because the sensitivity it gives up protects a
+	# quantity nothing should gate on, while the 20 it keeps are the checks
+	# whose loss is silent -- a throw resumes the caller, so the count is the
+	# only evidence.
+	quit(Check.report("_balance.gd", 22025))
 
 
 ## PLAN.md 1.2's second bullet, measured: how often do the three cards on offer
@@ -583,6 +724,33 @@ func _go() -> void:
 ## changes the draw. The pick policy is the control's, `offer[0]`, so the pool
 ## shrinks the same way the `<random>` row above shrinks it.
 func _axis_report() -> void:
+	# Every card in UPGRADES has a non-empty axis, checked *before* anything
+	# below indexes AXIS. The order is not tidiness, it is the whole bug: in
+	# GDScript `AXIS[missing]` throws, a throw inside a called function aborts
+	# that function only, the caller carries straight on to
+	# `quit(Check.report(...))`, and the gate exits 0. Deleting the
+	# `"BASTION_HOLD"` line to prove it printed the whole strategy table, no
+	# axis report at all, and a passing count of 167674 against a green 167687.
+	# The measurement a PLAN.md claim rests on simply stopped existing and
+	# nothing said so. A check sitting below the abort point never runs, so
+	# this one has to sit above it.
+	#
+	# `.get(id, "")` + is_empty rather than `has()`: a key present with an
+	# empty value is the same failure in different clothes, found by writing it
+	# the `has()` way first and mutating `"BASTION_HOLD": "stall"` to `""`,
+	# which sailed straight through.
+	for u in RunState.UPGRADES:
+		var axis_name := str(AXIS.get(str(u["id"]), ""))
+		Check.check(not axis_name.is_empty(),
+			"%s is mapped to a named axis -- an unmapped card deletes this entire report silently"
+				% str(u["id"]))
+
+	# ...and the two index sites below are `.get` too, for the same reason. The
+	# check above says *which* card is unmapped; the measurement still has to
+	# run to show where it landed. A throw here would take the report with it
+	# all over again, which is exactly what it did before this was written.
+	var unmapped := "<unmapped>"
+
 	var offers := 0
 	var clean := 0
 	var dup_of := {}
@@ -590,7 +758,8 @@ func _axis_report() -> void:
 	for a in AXIS.values():
 		seen_axis[a] = 0
 	for u in RunState.UPGRADES:
-		seen_axis[str(AXIS[str(u["id"])])] += 1
+		var pooled := str(AXIS.get(str(u["id"]), unmapped))
+		seen_axis[pooled] = int(seen_axis.get(pooled, 0)) + 1
 	for i in N:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 7000 + i
@@ -602,7 +771,7 @@ func _axis_report() -> void:
 			offers += 1
 			var axes := {}
 			for o in offer:
-				var a := str(AXIS[str(o["id"])])
+				var a := str(AXIS.get(str(o["id"]), unmapped))
 				axes[a] = int(axes.get(a, 0)) + 1
 			if axes.size() == offer.size():
 				clean += 1
@@ -618,6 +787,128 @@ func _axis_report() -> void:
 	for a in dup_of:
 		parts.append("%s %d" % [a, dup_of[a]])
 	print("  repeats by axis: %s" % ", ".join(parts))
+
+	# The second of the two things the header asserts in prose and nothing
+	# checked; the first is the AXIS completeness loop at the top of this
+	# function. Both were found by reading this function against its own
+	# comment, and this is the one that had gone stale: the paragraph used to
+	# claim the three counts "sum to 4339 exactly, which is the check that the
+	# counter is honest", which is not a check at all -- it is a number a reader
+	# is asked to verify by hand, and it stayed at 4339 through the reward
+	# clamps that moved the total to 4076 without anyone noticing.
+	#
+	# The invariant is worth having for its own sake. With three cards an axis
+	# can repeat at most once and only one axis can, so every offending offer
+	# contributes exactly one to the histogram. That is what makes the histogram
+	# mean "offers that repeated this axis" rather than "card slots that
+	# repeated", and it is also the thing that breaks first if `roll_rewards`
+	# ever stops offering three.
+	#
+	# Tested rather than reasoned, by widening the offer to four: the
+	# `picks.size() < OFFER_COUNT` at run.gd:331 becomes `< 4` for the length of
+	# a run and is put back afterwards, and the check reports "7189 histogram
+	# hits, 6433 offending offers" and exits 1. Four cards can repeat twice in
+	# one offer, so the counts sum past the number of offers -- which is the
+	# failure this exists to catch, and the printout alone would still have
+	# looked entirely plausible, which is why it needed a check rather than a
+	# reader.
+	#
+	# Both halves of that sentence used to be wrong and neither was visible
+	# from the comment: it cited run.gd line 268, which had drifted, and it
+	# quoted `picks.size() < 4` as if that were the shipped line rather than the
+	# mutation. A reader sent to 268 by a `< 4` quote lands on code that has
+	# neither, and concludes the experiment was never run. That correction fixed
+	# 268 but wrote 284, which had drifted the same way -- and 284 then sat in
+	# PLAN.md's sweep table as the *corrected* value, so the wrong number was
+	# ratified twice by fixing it once. It then went stale a third time while
+	# this audit was running: the line read 312, and a `depth_no` helper added
+	# nineteen lines higher up in the same file moved it to 331. Three failures,
+	# one shape, and every one of them a hand correction. The fourth is not a
+	# number either -- it is `test.gd`'s `_citations`, which fails a gate when a
+	# citation stops matching its line, because a number somebody has to choose
+	# to go and read is a number that will rot. The line is run.gd:331 and it is
+	# named
+	# here as `picks.size() < OFFER_COUNT`, because that is the code; `OFFER_COUNT
+	# := 3` is the constant, and quoting the literal 3 restates it somewhere that
+	# can drift again.
+	var dup_total := 0
+	for a in dup_of:
+		dup_total += int(dup_of[a])
+	Check.check(dup_total == offers - clean,
+		"every repeated-axis offer lands in the histogram exactly once (%d histogram hits, %d offending offers)"
+			% [dup_total, offers - clean])
+
+
+## PLAN.md 1.1 names the cards Phase 1 promised. Three shipped and one was cut
+## (`BALANCE.md:659`), and PLAN.md went on listing all four unstruck, so a
+## reader of the plan could not tell which were real. Nothing compared the two
+## documents, and this is the check that does.
+##
+## One direction only. `UPGRADES` carries twelve cards and 1.1 names three, by
+## design -- it is the archetype shortlist, not the pool -- so "every card is
+## named in the plan" is not true here and must not be asserted. What has to
+## hold is that 1.1 does not present a card the game does not have.
+##
+## Struck bullets are how a cut card is written down, BALANCE.md's own
+## convention, and `- ~~**Name**~~` does not begin `- **` so it is skipped here
+## for free. That is also the only reason the strikethrough is spelled rather
+## than left implicit: a dropped card left in the list is what this catches.
+##
+## The section is bounded by its own headings rather than the file scanned,
+## because `- **Problem**:` and `- **Design**:` use the identical bullet form
+## throughout Phase 0 and would all read as card names.
+##
+## ponytail: `found` only has to be non-zero. Hardcoding it to the number of
+## bullets would catch a half-reformat that still leaves one parseable line --
+## matching nothing at all is the failure worth catching, since then every
+## per-card check silently stops running.
+func _plan_cards() -> void:
+	if not FileAccess.file_exists("res://PLAN.md"):
+		return  ## not in the export, and _balance.gd is not either
+	var f := FileAccess.open("res://PLAN.md", FileAccess.READ)
+	if f == null:
+		return
+	var text := f.get_as_text()
+	var start := text.find("### 1.1")
+	var stop := text.find("### 1.2")
+	Check.check(start >= 0 and stop > start,
+		"PLAN.md 1.1 is still findable by its own ### headings (got %d, %d)" % [start, stop])
+	if start < 0 or stop <= start:
+		return
+	var names := {}
+	for u in RunState.UPGRADES:
+		names[str(u["name"])] = true
+	var found := 0
+	for line in text.substr(start, stop - start).split("\n"):
+		if not line.begins_with("- **"):
+			continue
+		var close := line.find("**:")
+		if close < 0:
+			continue
+		found += 1
+		# "- **Name**: ..." -- the name starts after `- **`, i.e. index 4, and
+		# runs to the `*` that `close` points at.
+		var card := line.substr(4, close - 4)
+		Check.check(names.has(card),
+			"PLAN.md 1.1 presents \"%s\" as a card and it is not in UPGRADES -- struck it, or the pool lost it"
+				% card)
+	Check.check(found > 0,
+		"PLAN.md 1.1 still lists its cards as `- **Name**: ...` bullets -- reformatting them would make every check above stop running without failing")
+
+	# PLAN.md 0.3 names the reactive threshold, and it is the one number in that
+	# section a retune can invalidate silently: `REACT_LOW` lives in `dice.gd`
+	# and the sentence in the plan has no reason to move with it. Measured rather
+	# than assumed -- 0.3 read "small hits < 4" for the whole of Phase 0 while
+	# the shipped rule was `< 6`, and nothing would have said so.
+	var rx := RegEx.new()
+	rx.compile("small hits[^\\n]*?`<\\s*(\\d+)`")
+	var m := rx.search(text)
+	Check.check(m != null,
+		"PLAN.md 0.3 still states the reactive threshold as `small hits ... `<N>`` -- reformatting that sentence makes the check below stop running")
+	if m != null:
+		Check.check(m.get_string(1).to_int() == Rules.Enemy.REACT_LOW,
+			"PLAN.md 0.3's reactive threshold agrees with Enemy.REACT_LOW (%d)"
+				% Rules.Enemy.REACT_LOW)
 
 
 ## Which die this policy wants re-rolled. Greedy is "re-roll the worst face",
@@ -736,3 +1027,47 @@ func _spend_focus(enc) -> void:
 	if best >= 0:
 		enc.focus_die(best)
 
+
+
+## BALANCE.md states criterion 1 twice -- as a multiple of the control, and as a
+## win rate -- and the two forms drifted apart without either being false. It
+## read "1.49x widens** vs `<random>`" beside "beating 24.4% wins" in a section
+## that also gave the control as 18.0%, and 1.49 x 18.0 is 26.8: the percentage
+## form was failing the very criterion it is the percentage of, and nothing said
+## so, because each form was separately defensible and both had been restamped
+## from the same bench.
+##
+## All three numbers are read out of the document, and the control is one of them
+## rather than this bench's live `control_wins`. That is the whole design, and it
+## is not a detail: the first version multiplied the anchor by the live control
+## and was green at the shipped seed base and red at 47000 and 91000 -- a gate
+## that fails on a re-roll having found nothing, which is the exact thing the
+## floor above refuses to be. Reading the control from the document also catches
+## the failure this audit kept finding, the one where a restamp moves the input
+## and leaves the sentences built on it: that is now a red gate rather than prose
+## nobody rereads.
+func _gate_ratio() -> void:
+	if not FileAccess.file_exists("res://BALANCE.md"):
+		return  ## not in the export, and _balance.gd is not either
+	var f := FileAccess.open("res://BALANCE.md", FileAccess.READ)
+	if f == null:
+		return
+	var text := f.get_as_text()
+	var anchor := RegEx.new()
+	anchor.compile("widens\\*\\* vs `([0-9.]+)x`")
+	var rate := RegEx.new()
+	rate.compile("beating ([0-9.]+)% wins")
+	var ctrl := RegEx.new()
+	ctrl.compile("\\| random win% \\|[^|]*\\| \\*\\*([0-9.]+)%\\*\\*")
+	var a := anchor.search(text)
+	var p := rate.search(text)
+	var c := ctrl.search(text)
+	Check.check(a != null and p != null and c != null,
+		"BALANCE.md states criterion 1 as a multiple, a win rate, and the control it is a percentage of (got %s, %s, %s) -- reformat any of them and the check below stops running without failing"
+			% ["yes" if a != null else "no", "yes" if p != null else "no", "yes" if c != null else "no"])
+	if a == null or p == null or c == null:
+		return
+	var want := a.get_string(1).to_float() * c.get_string(1).to_float()
+	Check.check(absf(want - p.get_string(1).to_float()) < 0.05,
+		"BALANCE.md's two forms of criterion 1 agree (%.2fx at %.1f%% random is %.1f%% wins, it says %.1f%%)"
+			% [a.get_string(1).to_float(), c.get_string(1).to_float(), want, p.get_string(1).to_float()])

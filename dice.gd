@@ -149,7 +149,7 @@ class Enemy:
 	# Behaviours, applied at the top of the enemy's turn (or on hit).
 	const BEH_NONE := 0
 	const BEH_ARMOR_GROW := 1  ## +1 armour each turn
-	const BEH_LIFESTEAL := 2  ## heals for half the damage it deals
+	const BEH_LIFESTEAL := 2  ## heals for half the damage that *lands* -- see take_turn
 	const BEH_CURSE := 3  ## drags one of your dice to its worst face
 	const BEH_ENRAGE := 4  ## +1 attack each turn
 	const BEH_BRACE := 5   ## +1 armour per hit under 6 -- chip is punished
@@ -204,7 +204,15 @@ class Enemy:
 	## never has to own the vocabulary.
 	func behavior_name() -> String:
 		match behavior:
-			BEH_ARMOR_GROW: return "hardens each turn"
+			# "hardens each turn" was false on most turns against both enemies that
+			# carry this behaviour, and false in the direction that costs the player:
+			# measured over 300 bot fights each, 59.5% of Rust Golem enemy turns and
+			# 75.0% of Stone Sentinel's *begin* with armour already at the cap, so
+			# nothing hardens. The store copy's version of this sentence was repaired
+			# in LISTING.md; this one is the same claim on the screen where it is read
+			# every turn, and `test.gd`'s `_enemy_tag` could not have caught it --
+			# it checks casing and the absence of `capitalize()`, never the claim.
+			BEH_ARMOR_GROW: return "hardens each turn, to %d" % ARMOR_GROW_CAP
 			BEH_LIFESTEAL: return "drinks your blood"
 			BEH_CURSE: return "curses a die"
 			BEH_ENRAGE: return "rages each turn"
@@ -228,6 +236,17 @@ class Encounter:
 	var dice: Array[Die] = []
 	var picks: Array[bool] = []   ## which dice are queued for a re-roll
 	var rerolls_left: int = 1
+	## Re-rolls a face *earned*, waiting for the turn they can be spent on. Kept
+	## apart from `rerolls_left` so "spend it or lose it" still means what it
+	## says: the base budget is a per-turn thing that expires, and only a bonus
+	## somebody paid for by rolling well crosses the turn boundary. Adding it to
+	## `rerolls_left` at the top of `roll_all` instead would forgive an unspent
+	## base re-roll too, which is the rule the whole turn is built on.
+	##
+	## Bounded by construction: it is drained in `roll_all` and refilled only by
+	## `resolve_faces`, and a hand of four carries at most a few bonus faces, so
+	## it cannot accumulate over a fight.
+	var carried_rerolls: int = 0
 	## Focus charges for the WHOLE fight, not the turn. Refilling per turn made
 	## the spend free: the bench measured gambler 13.3% -> nudger 50.7% wins,
 	## because Sunder's faces are bimodal (junk 0-1, jackpots 12-14) so "next
@@ -288,6 +307,25 @@ class Encounter:
 	## covering a Sunder cleave.
 	const BASTION_BLOCK := 4
 
+	## Give back what a release took, in both places `toggle_bank` clears
+	## `banked` -- the explicit second tap and the displacement of one hold by
+	## another. Without it the hold was a loan that was never called in, and the
+	## tap repeated: ten on/off pairs on one unspent die was 40 block in a single
+	## turn, with nothing anywhere capping `block`. Displacement was overpaying
+	## for the same reason from the other side -- it kept the first die's 4 and
+	## added the second's, so one decision paid twice.
+	##
+	## `not bank_carried` is load-bearing and is the whole reason this takes an
+	## argument-free read of the flag rather than being a plain subtraction. A
+	## die held at the end of last turn already paid its 4 into a block the
+	## enemy's turn then spent; `roll_all` flips `bank_carried` when it locks that
+	## die onto its face, so it is exactly "has this hold been paid for yet".
+	## Refunding a carried hold would claw 4 out of block the player earned
+	## *this* turn, charging them for displacing a decision they made yesterday.
+	func _release_bastion() -> void:
+		if bastion and not bank_carried:
+			block = maxi(0, block - BASTION_BLOCK)
+
 
 	# `d` is untyped so a run can hand over its pool (which grows with upgrades)
 	# without caring about the nested-class type at the call site.
@@ -299,7 +337,7 @@ class Encounter:
 			dice.append(die.copy())
 		picks.resize(dice.size())
 		picks.fill(false)
-		log_lines.append("A %s blocks your path." % enemy.title)
+		log_lines.append("%s blocks your path." % enemy.title)
 
 	# --- enemy factories (rules-level; the run's table composes from these) ---
 	static func grunt() -> Enemy:
@@ -423,6 +461,10 @@ class Encounter:
 		if over or i < 0 or i >= dice.size() or dice[i].spent:
 			return false
 		if banked == i:
+			# The refund reads `bank_carried`, so it has to happen before the
+			# flag is cleared -- that ordering is the difference between "give
+			# back what this hold took" and "give back what some hold took".
+			_release_bastion()
 			banked = -1
 			bank_carried = false
 			log_lines.append("%s released." % dice[i].title)
@@ -432,6 +474,7 @@ class Encounter:
 		# a maxed die already reads as -- one dead affordance is a mistake, two is
 		# a design.
 		if banked >= 0:
+			_release_bastion()
 			log_lines.append("%s released." % dice[banked].title)
 		banked = i
 		bank_carried = false
@@ -465,15 +508,21 @@ class Encounter:
 	##
 	## Ranked by worth() rather than by array index, because the faces are not
 	## ladders. Sunder reads [rust, 1, cleave, 1, rust, rend]: one step along the
-	## array from cleave(12) is a 1, so an index rule turns the flagship die's
-	## best face into its worst. Worth() is also what REFORGE and CURSE already
-	## rank by, so a face that is a good bet and a good focus are the same face.
+	## array from cleave(12) is a 1, so an index rule drops Sunder's second-best
+	## face to a worth of 1 -- near the top of the die to its second-lowest.
+	## Worth() is also what REFORGE and CURSE already rank by, so a face that is a
+	## good bet and a good focus are the same face.
 	##
-	## Bounding the step to "worth + N" was tried and is a no-op: every die's faces
-	## are spaced further apart than any useful N, so the cheapest face above the
-	## current one is also the first one above the target. The gap is a property
-	## of the dice, not of the rule -- cap it and Sunder becomes unfocusable from
-	## every face worth caring about.
+	## Bounding the step to "worth + N" was tried and is **not** a no-op at any N
+	## worth having. This paragraph used to say it was one, and then said the
+	## opposite in its own next sentence; the opposite was true. The widest step
+	## in the whole library is **11** -- Sunder's `1` (worth 1) to `cleave` (worth
+	## 12) -- so a cap changes nothing only at N >= 11, which is a cap permitting
+	## the exact jump focus exists to refuse. Below that it binds, and what it
+	## breaks is Sunder: from its `1` the next face up is 11 away and from
+	## `cleave` it is 2, so any cap in 1..10 leaves Sunder focusable from `rust`
+	## and nowhere else. The gap is a property of the dice, not the rule, which
+	## is why the cap was cut and why `_focus_gap_tests` pins the 11.
 	func focus_die(i: int) -> bool:
 		var target := focus_face(i)
 		if target == null:
@@ -486,7 +535,8 @@ class Encounter:
 		return true
 
 	func roll_all(rng: RandomNumberGenerator) -> void:
-		rerolls_left = base_rerolls
+		rerolls_left = base_rerolls + carried_rerolls
+		carried_rerolls = 0
 		for i in dice.size():
 			if i == banked:
 				# Locked on its face, which is the point -- and the roll it
@@ -581,14 +631,22 @@ class Encounter:
 			bank_carried = false
 		enemy.hp -= dealt
 		block += blk
-		rerolls_left += gained
+		carried_rerolls += gained
 		# A rush pays exactly once. `roll()` already clears the mark, so the turn
 		# flow cannot double-pay it, but nothing stops a second resolve in the
 		# same turn and `spent` is the precedent for not trusting that.
 		for i in dice.size():
 			dice[i].rushed = 0
-		log_lines.append("You deal %d (armour %d). You gain %d block.%s" % [
-			dealt, enemy.armor, blk, (" +%d re-roll" % gained) if gained else "",
+		# Parenthetical names the modifier that actually ran. While Exposed,
+		# `Enemy.pierce` returns `dmg * 3 / 2` and never reads armour, so
+		# "(armour n)" would credit armour with damage it never saw -- and would
+		# contradict the card that opened the window, which says the hits count
+		# for half again. Read before the decrement below, so it is the value
+		# that governed this resolve rather than the one that outlived it.
+		var how := "armour %d" % enemy.armor if enemy.exposed == 0 \
+			else "exposed — half again"
+		log_lines.append("You deal %d (%s). You gain %d block.%s" % [
+			dealt, how, blk, (" +%d re-roll" % gained) if gained else "",
 		])
 		# Exposed is spent here, by the resolve that uses it, and set again by the
 		# same resolve if this turn's hardest face re-earned it. Decrementing it
@@ -610,15 +668,28 @@ class Encounter:
 			enemy.hp = 0
 			over = true
 			won = true
-			log_lines.append("The %s falls." % enemy.title)
+			log_lines.append("%s falls." % enemy.title)
 
 	func take_turn(rng: RandomNumberGenerator) -> void:
 		turn += 1
 		# Behaviours that ramp over the fight.
 		match enemy.behavior:
 			Enemy.BEH_ARMOR_GROW:
+				var grown_from := enemy.armor
 				enemy.armor = mini(enemy.armor + 1, Enemy.ARMOR_GROW_CAP)
-				log_lines.append("%s hardens. Armour is now %d." % [enemy.title, enemy.armor])
+				# `_react` below already handles this for BEH_BRACE, and the
+				# omission here was the log rather than the rule: the cap held,
+				# but past it every enemy turn still said "hardens" while nothing
+				# changed -- the game claiming a rule it had stopped applying.
+				# Seven turns for a Stone Sentinel, nine for a Rust Golem, both
+				# well inside a fight a player sees, and this log is the only
+				# place the ceiling is ever told. The wording is `_react`'s,
+				# verbatim, so the ceiling reads the same whichever behaviour hit
+				# it -- one fact, one sentence.
+				if enemy.armor > grown_from:
+					log_lines.append("%s hardens. Armour is now %d." % [enemy.title, enemy.armor])
+				else:
+					log_lines.append("Its armour is already at its limit.")
 			Enemy.BEH_ENRAGE:
 				enemy.atk += 1
 				log_lines.append("%s rages. Attack is now %d." % [enemy.title, enemy.atk])
@@ -628,6 +699,11 @@ class Encounter:
 		var hit := enemy.atk - soaked
 		hp -= hit
 		block = 0
+		# Reported here, before lifesteal and thorns answer it, because that is
+		# the order the turn ran in. See the test above for what the late version
+		# cost: a counter before the blow, and no blow at all when the counter
+		# was lethal.
+		log_lines.append("%s hits for %d (%d blocked)." % [enemy.title, hit, soaked])
 		if enemy.behavior == Enemy.BEH_LIFESTEAL and hit > 0:
 			var healed := mini(enemy.max_hp - enemy.hp, hit / 2)
 			enemy.hp += healed
@@ -640,9 +716,8 @@ class Encounter:
 				enemy.hp = 0
 				over = true
 				won = true
-				log_lines.append("The %s dies to your thorns." % enemy.title)
+				log_lines.append("%s dies to your thorns." % enemy.title)
 				return
-		log_lines.append("%s hits for %d (%d blocked)." % [enemy.title, hit, soaked])
 		if enemy.behavior == Enemy.BEH_CURSE and not over:
 			_curse_one(rng)
 		if hp <= 0:
@@ -761,11 +836,67 @@ static func self_test() -> void:
 	e.resolve_rerolls(rng)
 	Check.check(e.spent_count() == 1, "no die may be re-rolled twice per turn")
 
-	# Hex high faces grant re-rolls, so the budget can grow mid-turn.
+	# Hex high faces grant re-rolls. This used to assert the grant landed in
+	# `rerolls_left` on the spot, and that assertion is what kept the bug alive:
+	# adding to `rerolls_left` inside `resolve_faces` looks like the budget grew,
+	# and nothing in this test ever crossed a turn boundary to notice it was then
+	# wiped. It is `carried_rerolls` now, and the crossing is below.
 	var before := e.rerolls_left
 	e.dice[3].up = 5
 	e.resolve_faces()
-	Check.check(e.rerolls_left == before + 1, "Hex 6 should grant a re-roll")
+	Check.check(e.carried_rerolls == 1, "Hex 6 grants a re-roll")
+	Check.check(e.rerolls_left == before, "and does not inflate the current turn's budget (%d)" % e.rerolls_left)
+
+	# ...and the grant has to survive to the turn it is spent on. It used not to:
+	# `resolve_faces` adds it on its last line, `fight.gd:_on_end_turn` clears
+	# `has_rolled` before the enemy swings so the Re-roll button is dead, and the
+	# next `roll_all` reset `rerolls_left` to `base_rerolls` -- so the "+1 re-roll"
+	# the resolve logs (and three Hex faces and two Spark faces exist to produce)
+	# was wiped before anything could spend it. The test above could not see that
+	# because it reads the grant in the same breath it made it, with no turn in
+	# between; this one crosses the boundary.
+	var carried := Encounter.new(Encounter.grunt(), Encounter.library())
+	carried.base_rerolls = 1
+	carried.roll_all(RandomNumberGenerator.new())
+	carried.dice[3].up = 5
+	carried.resolve_faces()
+	Check.check(carried.carried_rerolls == 1,
+		"a Hex 6 banks a re-roll for the next turn (%d)" % carried.carried_rerolls)
+	carried.roll_all(RandomNumberGenerator.new())
+	Check.check(carried.rerolls_left == 2,
+		"and the next turn opens with it spendable, 1 base + 1 earned (%d)" % carried.rerolls_left)
+	Check.check(carried.carried_rerolls == 0, "and it is spent opening, not banked a second time")
+
+	# Only the *earned* one carries. The base re-roll is still "spend it or lose
+	# it" -- folding the carry into `rerolls_left` instead would quietly forgive
+	# an unspent base, which is the one rule the whole turn is built on.
+	var hoarder := Encounter.new(Encounter.grunt(), Encounter.library())
+	hoarder.base_rerolls = 1
+	hoarder.roll_all(RandomNumberGenerator.new())
+	Check.check(hoarder.rerolls_left == 1, "a fresh turn holds the base budget")
+	hoarder.roll_all(RandomNumberGenerator.new())
+	Check.check(hoarder.rerolls_left == 1,
+		"and an unspent base re-roll is still lost, not banked (now %d)" % hoarder.rerolls_left)
+	# Both at once: earn one and leave the base unspent, and the turn should open
+	# with exactly one more than the base -- not two.
+	var mixed := Encounter.new(Encounter.grunt(), Encounter.library())
+	mixed.base_rerolls = 1
+	mixed.roll_all(RandomNumberGenerator.new())
+	mixed.dice[3].up = 5
+	mixed.resolve_faces()
+	mixed.roll_all(RandomNumberGenerator.new())
+	Check.check(mixed.rerolls_left == 2,
+		"an earned re-roll carries while an unspent base does not (now %d)" % mixed.rerolls_left)
+	# And a banked die's re-roll is earned the same way, not a bonus on the spot.
+	var banked := Encounter.new(Encounter.grunt(), Encounter.library())
+	banked.base_rerolls = 1
+	banked.roll_all(RandomNumberGenerator.new())
+	banked.dice[3].up = 5
+	Check.check(banked.toggle_bank(3), "a Hex 6 can be held")
+	banked.roll_all(RandomNumberGenerator.new())
+	banked.resolve_faces()
+	Check.check(banked.carried_rerolls == 1,
+		"a held Hex 6 earns its re-roll through the hold (%d)" % banked.carried_rerolls)
 
 	# Ward contributes block, not damage. A fresh Encounter has every die on
 	# face 0, and the Grunt has no armour, so all three damaging faces land:
@@ -797,6 +928,70 @@ static func self_test() -> void:
 	var a0 := ag.enemy.armor
 	ag.take_turn(rng)
 	Check.check(ag.enemy.armor == a0 + 1, "armour grows every turn")
+
+	# ...and stops at the ceiling, which `dice.gd`'s "armour never passes the cap"
+	# did NOT cover: that one runs on `br`, a BEH_BRACE enemy, and the constant's
+	# name reads as if it belongs to both. ARMOR_GROW's cap was the only rule in
+	# `take_turn` with no check on it at all -- and it is the rule whose log line
+	# also claimed the enemy kept hardening past it.
+	#
+	# 500 health because the loop below plays twelve enemy turns and the player
+	# would otherwise die on the fifth, after which every turn appends "You fall."
+	# as the last line and these assertions would read that instead.
+	var cap := Encounter.new(Enemy.new("Wall", 60, 0, 4, Enemy.BEH_ARMOR_GROW),
+		Encounter.library(), 500, 500)
+	var mark := 0
+	while cap.enemy.armor < Enemy.ARMOR_GROW_CAP:
+		mark = cap.log_lines.size()
+		cap.take_turn(rng)
+	# `log_lines[-1]` is the enemy's *hit*, not the behaviour's: `take_turn`
+	# writes the ramp first and the attack after. So the turn's own words are the
+	# slice from `mark`, which is why this reads the range and not the last line
+	# -- an assertion written against `[-1]` passed nothing and failed for the
+	# right reason, which is the only reason this comment exists.
+	var said := ""
+	for i in range(mark, cap.log_lines.size()):
+		said += cap.log_lines[i] + " "
+	# The loop stops on `<`, so this first check cannot fail by the cap going
+	# missing: uncapped armour still arrives at 12 on the twelfth turn. Measured
+	# by deleting the `mini(...)` -- this stayed green and the last one below went
+	# red, which is the `br` check's trick all over again, so its message now says
+	# what it really tests. Enforcing the cap is the *last* check's job.
+	Check.check(cap.enemy.armor == Enemy.ARMOR_GROW_CAP,
+		"ARMOR_GROW climbs to the cap without stepping past it (%d)" % Enemy.ARMOR_GROW_CAP)
+	Check.check(said.contains("hardens. Armour is now %d." % Enemy.ARMOR_GROW_CAP),
+		"and the turn that reaches it still says it hardened (said \"%s\")" % said)
+	mark = cap.log_lines.size()
+	cap.take_turn(rng)
+	said = ""
+	for i in range(mark, cap.log_lines.size()):
+		said += cap.log_lines[i] + " "
+	Check.check(cap.enemy.armor == Enemy.ARMOR_GROW_CAP,
+		"and a turn past the ceiling changes nothing")
+	Check.check(said.contains("Its armour is already at its limit."),
+		"and says the armour is at its limit rather than claiming another harden "
+			+ "(said \"%s\")" % said)
+
+	# The same false claim, on the surface it is read every turn: the tag under
+	# the enemy's name. `test.gd`'s `_enemy_tag` reads these strings for casing
+	# and cannot see whether they are true -- "hardens each turn" was false on
+	# 59.5% of Rust Golem enemy turns and 75.0% of Stone Sentinel's, measured
+	# over 300 bot fights each, because those turns *begin* with the armour
+	# already at the cap and nothing hardens.
+	#
+	# Derived from the constant, not typed, so moving the cap moves the sentence
+	# instead of quietly making it wrong -- the rule `run.gd` already applies to
+	# the store copy, and the first time it has been applied here.
+	#
+	# ENRAGE is the control, and the reason this must not be loosened into "every
+	# tag states a ceiling": `BEH_ENRAGE` really is uncapped, so "rages each
+	# turn" is true of it and has to stay uncaveated.
+	var ag_tag := Enemy.new("G", 30, 3, 4, Enemy.BEH_ARMOR_GROW).behavior_name()
+	Check.check(ag_tag == "hardens each turn, to %d" % Enemy.ARMOR_GROW_CAP,
+		"the ARMOR_GROW tag states the ceiling that ends it (%s)" % ag_tag)
+	var en_tag := Enemy.new("R", 30, 0, 4, Enemy.BEH_ENRAGE).behavior_name()
+	Check.check(en_tag == "rages each turn",
+		"while the genuinely uncapped ENRAGE tag stays uncaveated (%s)" % en_tag)
 
 	# ENRAGE raises attack each enemy turn.
 	var en := Encounter.new(Enemy.new("Rage", 30, 0, 4, Enemy.BEH_ENRAGE), Encounter.library())
@@ -838,6 +1033,18 @@ static func self_test() -> void:
 	br.dice[1].up = 1  # Sunder 1
 	br.resolve_faces()
 	Check.check(br.enemy.armor == 1, "rust is not a hit and does not count; 1 is")
+	# The "+1 armour per hit" on BEH_BRACE, and the check that could not see it.
+	# Every case above puts exactly ONE face under REACT_LOW on the board, so all
+	# three of them read identically whether the rule is one armour per hit, one
+	# per unit of damage, or a flat one per resolve. `low` is a `low += 1` count
+	# at both accumulation sites, so it is per hit -- but a reader checking the
+	# constant's comment against these three checks could not have told, and the
+	# distinction is the whole rule: per-damage would make two chips worth 5.
+	br.enemy.armor = 0
+	br.dice[0].up = 2  # Blade 4, back under the threshold alongside Sunder's 1
+	br.resolve_faces()
+	Check.check(br.enemy.armor == 2,
+		"two weak hits are two armour -- not one, and not their damage added up")
 
 	# The cap, or a chip-heavy pool walks the armour past every die it has.
 	br.enemy.armor = Enemy.ARMOR_GROW_CAP
@@ -872,6 +1079,28 @@ static func self_test() -> void:
 	th.take_turn(rng)
 	Check.check(th.enemy.hp == th_hp - 5, "thorns reflect damage back")
 
+	# ...and the case the card text did not say out loud. `soaked` is a
+	# `mini(block, enemy.atk)`, so an attack the player fully blocks leaves
+	# `hit == 0` and the thorns never fire. That is the right rule -- there was
+	# no strike to reflect -- and BULWARK said "Reflect 4 damage when struck",
+	# which reads as "when attacked" and is false for the one thing a player
+	# holding a Ward is doing. Same shape as `hurt.ogg`, which the audio notes
+	# already flag as firing only on damage that got *through* block; the card
+	# was left saying the looser thing. `block` is set past the enemy's attack on
+	# purpose rather than solving for a face, so the test does not depend on what
+	# the dice rolled.
+	var tb := Encounter.new(Encounter.grunt(), Encounter.library())
+	tb.thorns = 4
+	tb.block = 999
+	var tb_hp := tb.enemy.hp
+	var tb_hp_player := tb.hp
+	tb.take_turn(rng)
+	Check.check(tb.hp == tb_hp_player, "a fully blocked attack costs no health")
+	Check.check(tb.enemy.hp == tb_hp,
+		"and a fully blocked attack triggers no thorns (thorns did %d)"
+			% (tb_hp - tb.enemy.hp))
+	Check.check(tb.block == 0, "the block is spent either way")
+
 	_focus_tests()
 
 	# The pass/fail verdict is Check.report()'s exit code, not this line.
@@ -893,7 +1122,7 @@ static func _focus_tests() -> void:
 
 	# Sunder is the reason faces are ranked by worth and not by index. Its faces
 	# are [rust, 1, cleave, 1, rust, rend]; one step along the array from cleave
-	# is a 1. Under an index rule the flagship die's best face becomes its worst.
+	# is a 1. Under an index rule Sunder's second-best face drops to a worth of 1.
 	var sunder := e.dice[1]
 	sunder.up = 2  # cleave, 12
 	var worth_before: int = sunder.face().worth()
@@ -946,6 +1175,32 @@ static func _focus_tests() -> void:
 	_bank_budget_tests()
 	_pair_tests()
 	_pierce_tests()
+	_focus_gap_tests()
+
+
+## The widest step in the library, which is the number `focus_die`'s comment
+## turns on. A "worth + N" cap on the step is a no-op only when N is at least
+## this, so the argument for cutting the cap is a fact about the face tables and
+## not about the rule -- which makes it exactly the kind of claim that goes stale
+## quietly. Give any die two faces further apart, or move Sunder's `cleave`, and
+## this goes red so the comment gets re-read instead of trusted.
+static func _focus_gap_tests() -> void:
+	var widest := 0
+	var where := ""
+	for pool in [Encounter.library(), Encounter.bonus_dice()]:
+		for d in pool:
+			for f in d.faces:
+				var above := -1
+				for g in d.faces:
+					if g.worth() > f.worth() and (above < 0 or g.worth() < above):
+						above = g.worth()
+				if above >= 0 and above - f.worth() > widest:
+					widest = above - f.worth()
+					where = "%s's '%s' up to a worth of %d" % [d.title, f.label, above]
+	Check.check(widest == 11,
+		("the widest focus step measures %d (%s), where focus_die's comment and "
+			+ "this check assume 11; a 'worth + N' cap is a no-op only at N >= the "
+			+ "measured %d, so re-read that comment") % [widest, where, widest])
 
 
 ## GAMBLERS_RUSH: a re-roll that lands on a strictly better face adds half of
@@ -1059,6 +1314,28 @@ static func _deflect_tests() -> void:
 	q.resolve_faces()
 	Check.check(q.last_deflected == 0, "a block-only resolve deflects nothing")
 
+	# The log is told what happened in the order it happened. The enemy's hit is
+	# applied first, so it is reported first -- but it used to be reported *after*
+	# the thorns counter, which made two things wrong at once. A live counter
+	# read before the blow that provoked it, and a killing one dropped the hit
+	# line entirely: the player watched the health bar fall with the log ending
+	# on the enemy's corpse, so the damage they had just taken was in no line at
+	# all. Report the attack, then the counter.
+	var th := Encounter.new(Enemy.new("Spiky", 3, 0, 10), [Encounter.library()[0]])
+	th.thorns = 4
+	th.take_turn(RandomNumberGenerator.new())
+	var said := ""
+	for l in th.log_lines:
+		said += str(l) + " | "
+	Check.check(th.enemy.hp == 0 and th.won and th.over,
+		"thorns that finish the enemy still end the fight (got %s)" % said)
+	Check.check(said.contains("Spiky hits for 10"),
+		"and the blow that provoked them is still reported (%s)" % said)
+	var at_hit := said.find("hits for")
+	var at_thorns := said.find("Thorns deal")
+	Check.check(at_hit >= 0 and at_thorns >= 0 and at_hit < at_thorns,
+		"the blow is reported before the counter, not after it (%s)" % said)
+
 
 ## A seeded RNG, so the tests that care about *what* was rolled can say so
 ## without depending on the global one.
@@ -1068,8 +1345,20 @@ static func _seeded(s: int) -> RandomNumberGenerator:
 	return r
 
 
-## BASTION_HOLD: holding a die pays block immediately, and only for the hold --
-## a release, a displace and a rejected tap all leave the counter alone.
+## BASTION_HOLD: holding a die pays block immediately, and a release gives it
+## back. Only the die currently held has been paid for, so the count is at most
+## one BASTION_BLOCK whatever the player taps -- and a rejected tap pays nothing.
+##
+## The first version of this function asserted the opposite and was wrong. It
+## read "releasing it does not pay again", checked that the counter was
+## unchanged, and passed -- on a build where the hold was a repeatable tap worth
+## 4 block a time with nothing capping `block`. "Does not pay again" had been
+## read as "a release is not a gain", and the property that matters is "a
+## release is not a free hold": unchanged and zero are the same number to a
+## player and nothing like the same state. It also went straight from a release
+## to holding a *different* die, so the re-take that makes it an exploit was
+## never walked. A test that names the mechanism it does not test is worse than
+## no test, because it is the one a reader checks and stops.
 static func _bastion_tests() -> void:
 	var lib := Encounter.library()
 	var k := Encounter.new(Encounter.warden(), [lib[2], lib[0]])  ## Ward, then Blade
@@ -1077,15 +1366,75 @@ static func _bastion_tests() -> void:
 	Check.check(k.toggle_bank(0), "the first hold lands")
 	Check.check(k.block == Encounter.BASTION_BLOCK, "and pays %d block on the spot" % Encounter.BASTION_BLOCK)
 	k.toggle_bank(0)
-	Check.check(k.block == Encounter.BASTION_BLOCK, "releasing it does not pay again")
+	Check.check(k.block == 0,
+		"releasing it gives the block back, which is what closes the tap")
+	# ...and the half of the same sentence that was never written. "Does not pay
+	# again" was checked as "the release is not a *gain*", and that passed on a
+	# build where the release *keeps* the payment -- which is the same state as a
+	# free hold. Re-take the die it just gave back and the block rises again, so
+	# the tap repeats, and nothing anywhere caps `block`: ten on/off pairs is
+	# forty block in one turn, before the resolve.
+	var k2 := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
+	k2.bastion = true
+	for _i in 10:
+		k2.toggle_bank(0)
+		k2.toggle_bank(0)
+	Check.check(k2.block == 0,
+		"a die held and released ten times nets no block (block %d)" % k2.block)
+	Check.check(k2.toggle_bank(0), "and it can still be held once afterwards")
+	Check.check(k2.block == Encounter.BASTION_BLOCK,
+		"which pays once, not eleven (block %d)" % k2.block)
 	Check.check(k.toggle_bank(1), "holding a second die displaces the first")
-	Check.check(k.block == Encounter.BASTION_BLOCK * 2, "and pays for the new one")
+	# One, not two. Displacing used to keep the first die's 4 and add the second's,
+	# so a single decision -- hold a die -- paid twice. It is the same defect seen
+	# from the other side: payment that survives the hold it was paid for.
+	Check.check(k.block == Encounter.BASTION_BLOCK,
+		"and displacing pays once, for the one die still held (block %d)" % k.block)
 	Check.check(not k.toggle_bank(9), "an out-of-range tap is refused outright")
-	Check.check(k.block == Encounter.BASTION_BLOCK * 2, "and a refused tap pays nothing")
+	Check.check(k.block == Encounter.BASTION_BLOCK, "and a refused tap pays nothing")
+
+	# The other half of the same fix, and the half an unconditional subtraction
+	# gets wrong. A die held at the end of last turn already paid its 4 into a
+	# block the enemy's turn then spent, so displacing it next turn must not take
+	# 4 out of block the player earned *this* turn. `roll_all` is what flips
+	# `bank_carried`, and it does so by locking the held die onto its face -- so
+	# a second `roll_all` is a turn boundary without having to run the enemy's.
+	var carried := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
+	carried.bastion = true
+	carried.toggle_bank(0)
+	carried.roll_all(RandomNumberGenerator.new())
+	carried.roll_all(RandomNumberGenerator.new())
+	Check.check(carried.bank_carried,
+		"the held die is still banked and carried after a turn boundary")
+	carried.block = 9  ## block built on the *later* turn, not the one that paid
+	Check.check(carried.toggle_bank(1), "displacing a carried hold is allowed")
+	Check.check(carried.block == 13,
+		"and does not claw back block its payment already spent (block %d)" % carried.block)
 
 	var plain := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
 	plain.toggle_bank(0)
 	Check.check(plain.block == 0, "without the card, banking is still just deferral")
+
+	# The invariant the two blocks above only *sample*. Each of them is a single
+	# instance of "holds pay at most once", and an instance is what let the first
+	# version of this function look covered: it asserted one hold, one release,
+	# one displacement and stopped, which is exactly the set of taps the bug did
+	# not need. A ceiling has to be walked, not sampled -- so walk every die on
+	# and off, repeatedly, and take the peak. Pre-fix this reads 8 and not 4, and
+	# `block` has no ceiling of its own anywhere, so nothing else would catch it.
+	var inv := Encounter.new(Encounter.warden(), [lib[2], lib[0]])
+	inv.bastion = true
+	inv.roll_all(RandomNumberGenerator.new())
+	var peak := 0
+	for _pass in 3:
+		for i in inv.dice.size():
+			inv.toggle_bank(i)
+			peak = maxi(peak, inv.block)
+			inv.toggle_bank(i)
+			peak = maxi(peak, inv.block)
+	Check.check(peak <= Encounter.BASTION_BLOCK,
+		"holds pay at most %d block however they are tapped (peak %d)"
+			% [Encounter.BASTION_BLOCK, peak])
 
 
 ## Bank's budget, which is not a budget. Focus is a per-*fight* charge -- there
@@ -1243,6 +1592,31 @@ static func _pair_tests() -> void:
 	Check.check(held.toggle_bank(1), "Blade can be held")
 	Check.check(held.pair_bonus(0) == 5, "a held die still pairs -- it is on the board")
 
+	# And a *spent* one, which is the other half of the sentence at `pair_bonus`
+	# and the half nothing pinned. "a held die is on the board with its face up,
+	# and a spent one still pays this turn, so both count as partners" -- the hold
+	# is the check above, and the spend had no check at all, on either the field
+	# or the resolve.
+	#
+	# The half worth having, because it is the one an edit is likely to break.
+	# `if dice[j].spent: continue` inside `pair_bonus` reads as a tidy-up -- a
+	# spent die has "already re-rolled", so skipping it looks like the same
+	# courtesy `resolve_faces` pays the banked die. It is not: the resolve skips
+	# `i == banked` and never `spent`, because spending is an action, not an
+	# absence. Adding that line would retire a documented behaviour, and every
+	# other test here would still pass. Same two dice as the hold so the only
+	# difference is the flag, and the resolve is run rather than the field read,
+	# per the note on `_pierce_tests`: a test on `pair_bonus` alone would pass on
+	# a build where the resolve never consulted it.
+	var used := Encounter.new(Encounter.grunt(), [fang.copy(), Encounter.library()[0]])
+	used.dice[0].up = 2
+	used.dice[1].up = 3
+	used.dice[1].spent = true
+	Check.check(used.pair_bonus(0) == 5, "a spent partner still pairs -- it paid this turn")
+	used.enemy.hp = 30
+	used.resolve_faces()
+	Check.check(used.enemy.hp == 15, "and the resolve is unchanged: the doubled 5 plus its 5 is 15")
+
 	# A second Fang 5 does not feed the first. Compared raw, so the doubling
 	# cannot be earned twice off one hand.
 	var two := Encounter.new(Encounter.grunt(), [fang.copy(), fang.copy()])
@@ -1263,7 +1637,15 @@ static func _pair_tests() -> void:
 	pe.dice[1].up = 3  ## Blade 5
 	pe.enemy.hp = 60
 	pe.resolve_faces()
-	assert(pe.enemy.exposed == 1, "a doubled 5 reaches EXPOSE_AT and exposes")
+	# `Check.check` and not `assert`, and that is the only reason this line is
+	# worth reading twice. A bare assert was here and the suite passed with it
+	# failing: changed to a condition that cannot hold, `test.gd` still exited 0,
+	# because the failure aborts the function and takes the two checks after it
+	# with it -- 8526 checks became 8524, on stderr and in no exit code. This is
+	# the one check in the file that reads `face_hit` through `hardest`, so it is
+	# also the one whose silence costs the most. `shot.gd` measured the same
+	# engine behaviour for itself and acted on it; this had not been reached.
+	Check.check(pe.enemy.exposed == 1, "a doubled 5 reaches EXPOSE_AT and exposes")
 
 	# And it moves with the board: break the pair and the bonus is gone, so this
 	# is a thing the player watches rather than a stat on the card.
@@ -1394,6 +1776,34 @@ static func _bank_tests() -> void:
 	b.resolve_faces()
 	Check.check(b.banked == -1, "cashing empties the slot for the next hold")
 	Check.check(b.block >= held_worth, "and the held die paid out in full a turn later")
+
+	# The turn summary's parenthetical names the modifier that ran. Against an
+	# armoured enemy that is the armour -- but while Exposed, `Enemy.pierce`
+	# never reads armour at all, and the line used to name it regardless, so a
+	# Precision Strike turn credited armour with damage it never saw and
+	# contradicted the card that opened the window in the same breath.
+	#
+	# The comment above the RUSH_FLOOR line already records why this was
+	# invisible: those resolve paths "all passed on unarmoured enemies", and an
+	# unarmoured enemy made `(armour 0)` look harmless. These two are armoured on
+	# purpose.
+	var armoured := Enemy.new("Wall", 60, 4, 3)
+	var ae := Encounter.new(armoured, Encounter.library())
+	ae.dice[0].up = 5  ## Blade 9
+	ae.resolve_faces()
+	var plain := ae.log_lines[ae.log_lines.size() - 1]
+	Check.check(plain.contains("(armour 4)"),
+		"an armoured resolve names the armour it went through (%s)" % plain)
+	var ax := Encounter.new(Enemy.new("Wall", 60, 4, 3), Encounter.library())
+	ax.dice[0].up = 5
+	ax.enemy.exposed = 1
+	ax.resolve_faces()
+	var shown := ax.log_lines[ax.log_lines.size() - 1]
+	Check.check(shown.contains("exposed"),
+		"an exposed resolve names the exposure instead (%s)" % shown)
+	Check.check(not shown.contains("armour"),
+		"and never credits armour, which the resolve did not read")
+	Check.check(ax.enemy.exposed == 0, "the window still closes after it paid out")
 
 	# A CURSE enemy must not reach past the hold. It picks a die at random and
 	# drags it to its worst face, which silently breaks the one thing the player
