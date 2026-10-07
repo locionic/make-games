@@ -755,8 +755,8 @@ func _flicker(idxs: Array[int], steps: int) -> void:
 			c.scale = Vector2(0.84, 0.84))
 		tw.tween_property(c, "scale", Vector2.ONE, 0.2)\
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw.tween_property(c, "rotation", 0.0, 0.2)\
-			.parallel().set_trans(Tween.TRANS_SINE)
+		tw.parallel().tween_property(c, "rotation", 0.0, 0.2)\
+			.set_trans(Tween.TRANS_SINE)
 	busy = false
 	_refresh()
 
@@ -1096,7 +1096,7 @@ func _refresh() -> void:
 	var tag := enc.enemy.behavior_name()
 	if enc.enemy.armor > 0:
 		tag = ("%s   " % tag) if not tag.is_empty() else ""
-		tag += "armour %d" % enc.enemy.armor
+		tag += "Armour %d" % enc.enemy.armor
 	# Exposed is the one tag that is not a fact about the enemy but a window the
 	# player has to spend, so it goes in gold -- the colour everything else uses
 	# for "this is live, act on it" -- instead of sharing the muted grey that a
@@ -1104,7 +1104,7 @@ func _refresh() -> void:
 	# costs the whole card.
 	if enc.enemy.exposed > 0:
 		tag = ("%s   " % tag) if not tag.is_empty() else ""
-		tag += "exposed"
+		tag += "Exposed"
 	# Sentence case, not `String.capitalize()`. capitalize() is title case in
 	# Godot 4 -- it uppercases the first letter of *every* word and lowercases
 	# the rest -- so the names in `Dice.Enemy.behavior_name()`, which are
@@ -1426,13 +1426,13 @@ func _draw_die(i: int) -> void:
 	# would put it.
 	var shadow := Rect2(Vector2.ZERO, s).grow(2.0)
 	shadow.position += Vector2(0, 5)
-	draw_style_box(T.flat(Color(0, 0, 0, 0.36), Color(0, 0, 0, 0), 0, T.RADIUS), shadow)
-	draw_style_box(T.flat(fill, jewel, 2, T.RADIUS), Rect2(Vector2.ZERO, s))
+	cards[i].draw_style_box(T.flat(Color(0, 0, 0, 0.36), Color(0, 0, 0, 0), 0, T.RADIUS), shadow)
+	cards[i].draw_style_box(T.flat(fill, jewel, 2, T.RADIUS), Rect2(Vector2.ZERO, s))
 	# Two facets are the whole of the bevel.
-	draw_colored_polygon(PackedVector2Array([
+	cards[i].draw_colored_polygon(PackedVector2Array([
 		Vector2(3, 3), Vector2(s.x - 3, 3), Vector2(s.x - 11, s.y * 0.54),
 		Vector2(11, s.y * 0.44)]), Color(1, 1, 1, 0.055))
-	draw_colored_polygon(PackedVector2Array([
+	cards[i].draw_colored_polygon(PackedVector2Array([
 		Vector2(7, s.y * 0.64), Vector2(s.x - 9, s.y * 0.58),
 		Vector2(s.x - 3, s.y - 3), Vector2(3, s.y - 3)]), Color(0, 0, 0, 0.17))
 	# The gem inset: a hairline just *inside* the rim, in the face's own colour.
@@ -1440,9 +1440,9 @@ func _draw_die(i: int) -> void:
 	# set stone rather than an outline precisely because it is not on the edge.
 	# The palette is already the plan's -- crimson/sapphire/amethyst/amber are
 	# theme.gd's DMG, BLOCK, REROLL and GOLD, so no colour was invented here.
-	draw_rect(Rect2(Vector2(5, 5), s - Vector2(10, 10)),
+	cards[i].draw_rect(Rect2(Vector2(5, 5), s - Vector2(10, 10)),
 		Color(jewel.r, jewel.g, jewel.b, 0.30), false, 1.0)
 	# The glint: the chamfer catching light along the two lit edges.
 	var lit := jewel.lightened(0.38)
-	draw_line(Vector2(3, s.y - 4), Vector2(3, 3), lit, 2.0)
-	draw_line(Vector2(3, 3), Vector2(s.x - 4, 3), lit, 2.0)
+	cards[i].draw_line(Vector2(3, s.y - 4), Vector2(3, 3), lit, 2.0)
+	cards[i].draw_line(Vector2(3, 3), Vector2(s.x - 4, 3), lit, 2.0)

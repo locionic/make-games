@@ -651,7 +651,7 @@ func _run() -> void:
 	# measuring a slowed frame.
 	var pre_size: Vector2 = plated.shake_root.size
 	var pre_pos: Vector2 = plated.shake_root.position
-	var moved := 0.0
+	var moved := pre_pos.length()
 	Engine.time_scale = 0.02
 	for _i in 3:
 		await process_frame
