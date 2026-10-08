@@ -157,6 +157,19 @@ static func secondary_button(text: String, accent: Color = GOLD) -> Button:
 ## The full-screen backdrop: a near-black gradient, darker at the bottom, so the
 ## screen is not one flat slab of grey.
 static func backdrop() -> TextureRect:
+	var tr := TextureRect.new()
+	var path := "res://assets/textures/bg_altar_table.png"
+	if ResourceLoader.exists(path):
+		var tex = ResourceLoader.load(path)
+		if tex is Texture2D:
+			tr.texture = tex
+			tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tr.modulate = Color(0.75, 0.75, 0.85, 0.60)
+			return tr
+
 	var g := Gradient.new()
 	g.set_color(0, Color("#171b26"))
 	g.set_color(1, BG)
@@ -167,7 +180,6 @@ static func backdrop() -> TextureRect:
 	tex.fill_from = Vector2(0, 0)
 	tex.fill_to = Vector2(0, 1)
 
-	var tr := TextureRect.new()
 	tr.texture = tex
 	tr.stretch_mode = TextureRect.STRETCH_SCALE
 	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
