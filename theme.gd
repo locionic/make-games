@@ -168,6 +168,11 @@ static func backdrop() -> TextureRect:
 			tr.set_anchors_preset(Control.PRESET_FULL_RECT)
 			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			tr.modulate = Color(0.75, 0.75, 0.85, 0.60)
+			tr.tree_entered.connect(func():
+				var tw := tr.create_tween().set_loops()
+				tw.tween_property(tr, "modulate", Color(0.88, 0.82, 0.92, 0.72), 1.6).set_trans(Tween.TRANS_SINE)
+				tw.tween_property(tr, "modulate", Color(0.68, 0.70, 0.80, 0.52), 2.1).set_trans(Tween.TRANS_SINE)
+			)
 			return tr
 
 	var g := Gradient.new()
