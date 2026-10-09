@@ -110,6 +110,9 @@ class DieIcon extends Control:
 			return
 		var s: float = minf(size.x, size.y)
 		var o := (size - Vector2(s, s)) * 0.5
+		const ArtHelper = preload("res://art_helper.gd")
+		if ArtHelper.draw_die_icon(self, kind, o, s):
+			return
 		var c := Color(tint.r, tint.g, tint.b, 0.95)
 		var wash := Color(tint.r, tint.g, tint.b, 0.26)
 		match kind:
@@ -383,6 +386,9 @@ func _draw_sigil() -> void:
 	# that owns its rect -- the same fight `_float_text` lost by being parented
 	# to the wrong node.
 	var rr := r * (1.0 + _breath * 0.035)
+	const ArtHelper = preload("res://art_helper.gd")
+	if ArtHelper.draw_monster_sigil(enemy_sigil, e.behavior, boss, at, rr, e.title, edge, wash):
+		return
 	match e.behavior:
 		Rules.Enemy.BEH_ARMOR_GROW, Rules.Enemy.BEH_BRACE:
 			_stone_sentinel(at, rr, wash, deep, edge, e.armor)
@@ -529,7 +535,8 @@ func _build_card_face(i: int) -> void:
 	icons[i].size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	icons[i].mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(icons[i])
-	value_labels[i] = _card_label(row, T.F_DISPLAY, T.TEXT)
+	value_labels[i] = _card_label(row, 22 if wide else 26, T.TEXT)
+	value_labels[i].clip_text = false
 	value_labels[i].vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	effect_labels[i] = _card_label(stack, T.F_TINY, T.MUTED)
 	# Connected last, and after the face exists, so the first `_draw` already has
@@ -851,6 +858,8 @@ func _paint_card(i: int, f: Rules.Face, final: bool) -> void:
 		hit = enc.face_hit(i)
 	var value := maxi(maxi(hit, f.block), f.rerolls)
 	value_labels[i].text = str(value) if has_value else "--"
+	value_labels[i].add_theme_font_size_override("font_size", 22 if cards.size() >= 6 else 26)
+	value_labels[i].clip_text = false
 
 	var colour := T.face_colour(f.dmg, f.block, f.rerolls)
 	if target != null:
