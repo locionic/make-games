@@ -66,7 +66,7 @@ static func get_monster_texture(behavior: int, is_boss: bool, ename: String = ""
 			return t
 	return null
 
-static func draw_monster_sigil(ci: CanvasItem, behavior: int, is_boss: bool, at: Vector2, rr: float, ename: String = "", edge: Color = Color.WHITE, wash: Color = Color.TRANSPARENT) -> bool:
+static func draw_monster_sigil(ci: CanvasItem, behavior: int, is_boss: bool, at: Vector2, rr: float, ename: String = "", edge: Color = Color.WHITE, wash: Color = Color.TRANSPARENT, armor: int = 0) -> bool:
 	var m_tex := get_monster_texture(behavior, is_boss, ename)
 	if m_tex != null:
 		# Ambient occult halo
@@ -80,5 +80,14 @@ static func draw_monster_sigil(ci: CanvasItem, behavior: int, is_boss: bool, at:
 		
 		# Rim vignette ring
 		ci.draw_arc(at, rr * 0.95, 0.0, TAU, 36, Color(edge.r, edge.g, edge.b, 0.20), 2.0)
+		
+		# Integrated armor ticks on the frame rim
+		if armor > 0:
+			var step: float = PI / 6.0
+			var start_ang: float = -PI * 0.75
+			for i in mini(armor, 12):
+				var a := start_ang + float(i) * 0.15
+				var d := Vector2(cos(a), sin(a))
+				ci.draw_line(at + d * (rr * 0.88), at + d * (rr * 0.96), Color(0.35, 0.75, 0.95, 0.9), 3.0)
 		return true
 	return false

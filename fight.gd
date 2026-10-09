@@ -370,6 +370,13 @@ func _draw_sigil() -> void:
 		Rules.Enemy.BEH_CURSE: rot = -PI / 2.0
 		Rules.Enemy.BEH_ENRAGE: rot = PI / 8.0
 	var reach: float = minf(enemy_sigil.size.x, enemy_sigil.size.y) * 0.5 - 8.0
+	var rr := r * (1.0 + _breath * 0.035)
+	const ArtHelper = preload("res://art_helper.gd")
+	if ArtHelper.draw_monster_sigil(enemy_sigil, e.behavior, boss, at, rr, e.title, edge, wash, e.armor):
+		if boss:
+			enemy_sigil.draw_arc(at, minf(r * 1.5, reach), 0.0, TAU, 48, T.GOLD, 1.5)
+		return
+
 	if boss:
 		enemy_sigil.draw_arc(at, minf(r * 1.5, reach), 0.0, TAU, 48, T.GOLD, 1.5)
 	if e.armor > 0:
@@ -379,16 +386,6 @@ func _draw_sigil() -> void:
 			var a := rot + step * (float(i) + 0.5)
 			var d := Vector2(cos(a), sin(a))
 			enemy_sigil.draw_line(at + d * (tr - 9.0), at + d * tr, T.BLOCK, 3.0)
-
-	# `_breath` is tweened by `_start_breathing`, so a standing enemy is never
-	# perfectly still. It scales the silhouette rather than the control, because
-	# `enemy_sigil` has no minimum height and a scale on it fights the Container
-	# that owns its rect -- the same fight `_float_text` lost by being parented
-	# to the wrong node.
-	var rr := r * (1.0 + _breath * 0.035)
-	const ArtHelper = preload("res://art_helper.gd")
-	if ArtHelper.draw_monster_sigil(enemy_sigil, e.behavior, boss, at, rr, e.title, edge, wash):
-		return
 	match e.behavior:
 		Rules.Enemy.BEH_ARMOR_GROW, Rules.Enemy.BEH_BRACE:
 			_stone_sentinel(at, rr, wash, deep, edge, e.armor)
