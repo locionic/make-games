@@ -33,6 +33,22 @@ class Face:
 	##
 	## Compares raw `dmg`, so two paired faces cannot chain into each other.
 	var pairs: bool = false
+	## The element this face carries, and `E_NONE` for the 48 that carry none.
+	## Item 9.
+	##
+	## An element is a *pairing* tag, not a damage type. Nothing here is typed for
+	## it, no enemy resists it and no card multiplies it -- all it does is say
+	## which faces want to be in the same hand. Elemental damage types would be
+	## new content in three systems at once (the roster, the run's cards, every
+	## enemy), and `_balance.gd`'s BLEED post-mortem is the record of what this
+	## pool does with new content that lands in every fight of every run.
+	##
+	## 0 is not an element and never pairs. `tagged` has to be false for a face
+	## that is not in the pairing, because the test below would otherwise let a
+	## face pair with itself by being its own partner -- `j != i` guards the
+	## *die*, and two untagged faces both reading 0 is exactly the accident that
+	## would turn every die in the game into a pair.
+	var element: int = 0
 	## Armour this face ignores, per hit. Item 7, and the retry of item 5.
 	##
 	## Item 5 put 12 on Sunder's `cleave` and 12 is `Enemy.ARMOR_GROW_CAP`, so
@@ -137,12 +153,14 @@ class Die:
 	## Raise the weakest face by one step. Used by the REFORGE upgrade. `pairs`
 	## rides along: this builds a new Face, and a flag that did not would mean
 	## REFORGE on Fang's 5 quietly turned the mechanic off -- the one die in the
-	## game that has the thing, un-set it by accident.
+	## game that has the thing, un-set it by accident. `element` rides along for
+	## the same reason.
 	func forge() -> void:
 		var w := worst_index()
 		var f := faces[w]
 		faces[w] = Face.new(f.label, f.dmg + 1, f.block, f.rerolls)
 		faces[w].pairs = f.pairs
+		faces[w].element = f.element
 
 
 class Enemy:
@@ -232,6 +250,52 @@ class Encounter:
 	## answer is that it is not the armour. See `Enemy.pierce`.
 	const EXPOSE_AT := 10
 
+	## Elements, for `Face.element`. E_NONE is 0 on purpose: it is the default on
+	## every untagged face, so "carries an element" is `element != E_NONE` rather
+	## than an extra bool that could disagree with the int.
+	##
+	## Only two, because the rule below needs two *different* dice carrying the
+	## same one. A third element on a hand of four has no room to pair: 4 dice,
+	## 3 tags, one has to go unpaired, and which one is an arbitrary constraint
+	## rather than a line the player is reading off the board.
+	const E_NONE := 0
+	## Sunder's `cleave` and Spark's `15`. Spark's `15` is the one face in the
+	## pool that is already a fourth hit -- it deals 15 on its own -- so E_REND is
+	## the element a player has to *go looking for* rather than one that falls out
+	## of a good roll. Sunder's `cleave` is on the starter die, so E_REND is
+	## reachable at the size of the opening board; see `library()` for why it is
+	## that face and not `rend`.
+	const E_REND := 1
+	## Fang's `15`. Fang is the `pierce` die, so a partner here is the one that
+	## decides whether a face lands at all, which is the most direct read of
+	## "armour bypass" in the pool.
+	##
+	## Spark's `9` is deliberately left untagged even though it is Fang's natural
+	## partner, and the reason is the one that kills the whole mechanic if it is
+	## forgotten: two E_GLAZE faces would then pay 2 each, which on a 0-armour
+	## enemy is a flat +2 on two faces instead of armour bypass, and the largest
+	## single complaint about every item measured in `_balance.gd` is that it
+	## turned into a flat add. Tagging it is the version of this that BLEED's
+	## post-mortem is a record of.
+	const E_GLAZE := 2
+
+	## How much armour the pair ignores, when a pair pays. Half of what item 7's
+	## `pierce` gives, and that ratio is the whole argument: item 5 put 12 on a
+	## starter's face and blanked the armour system, item 7 was measured as a
+	## wash at a wash rate, and BLEED's flat add was the worst pick in the pool.
+	## This is the armour piece at a rate only a player who rolled the right pair
+	## ever sees, and it stacks with Fang's own 6.
+	##
+	## Predicted before the bench ran, so the measurement can falsify it: the
+	## band holds, the depth does not move, the wins do not move. Three tagged
+	## faces is the thinnest possible carve-out, on a die pool where Fang and
+	## Spark are already behind Fang's 18 and Spark's rerolls, so this has to be
+	## a rounding error in the band. What it should move is not the numbers but
+	## the bot's hold rate -- `Sunder cleave` and `Fang 15` become faces to hold
+	## rather than re-roll away, and a hold it does not make is a mechanic the
+	## bench cannot see.
+	const SYNERGY_PIERCE := 2
+
 	var enemy: Enemy
 	var dice: Array[Die] = []
 	var picks: Array[bool] = []   ## which dice are queued for a re-roll
@@ -281,7 +345,12 @@ class Encounter:
 	var over: bool = false
 	var won: bool = false
 	## Copied from the run so a fight can resolve without knowing about it.
-	var pierce: int = 0
+	## Not called `pierce` because `Encounter.synergy_pierce` is this class's
+	## other method and the field would sit on top of it -- GDScript allows a
+	## field and a method to share a name, and every such pair is a bug waiting
+	## for the reader who assumes `enc.pierce(...)` calls something.
+	## `precise_strike`/`precision` is the same rename for the same reason.
+	var pierce_card: int = 0
 	var thorns: int = 0
 	var base_rerolls: int = 1
 	var base_focus: int = 1  ## charges granted at the START of a fight, not each turn
@@ -365,6 +434,16 @@ class Encounter:
 			Face.new("1", 1, 0, 0), Face.new("2", 2, 0, 0), Face.new("3", 3, 0, 0),
 			Face.new("4", 4, 0, 1), Face.new("5", 5, 0, 1), Face.new("6", 6, 0, 1),
 		]))
+		# One starter face is tagged, and it is `cleave` rather than `rend`. The
+		# tags are `SYNERGY_PIERCE` armour bypass, and 14 - 14 is nothing against
+		# the armour cap: on the swingier face the mechanic is unreachable, and a
+		# player holding two rend dice reads a synergy on the card that never
+		# pays. `cleave` carries it instead, and at the cap 12 - 10 is still 2 --
+		# the reason item 5 was 12 on `cleave` is that 12 is `ARMOR_GROW_CAP`, so
+		# that face was already sized as armour bypass and this only stops it
+		# pretending otherwise. See `Face.element` for why one starter face is
+		# the ceiling and `Encounter.SYNERGY_PIERCE` for the rate.
+		out[1].faces[2].element = E_REND
 		return out
 
 	# Extra dice the ADD_DIE upgrade can grant -- swingier than the starters.
@@ -392,6 +471,12 @@ class Encounter:
 		# And the `pierce 6`, the face item 7 re-sized. See `Face.pierce` for why
 		# it is 15 and not 18, and for the `min(armour, 6) - 3` that decides it.
 		out[2].faces[5].pierce = 6
+		# The tags, on three faces -- these two plus Sunder's `cleave` in
+		# `library()`, which is the one a run meets without ADD_DIE. See
+		# `Encounter.SYNERGY_PIERCE` for why the mechanic pays as armour bypass and
+		# not as damage.
+		out[1].faces[5].element = E_REND    ## Spark 15
+		out[2].faces[5].element = E_GLAZE  ## Fang pierce 6
 		return out
 
 	func _picked() -> int:
@@ -417,11 +502,52 @@ class Encounter:
 				return f.dmg
 		return 0
 
+	## Whether die `i`'s face carries an element, and whether another die on the
+	## board is showing one with it.
+	func tagged(i: int) -> bool:
+		var f := dice[i].face()
+		if f.element == E_NONE or f.dmg <= 0:
+			return false
+		for j in dice.size():
+			if j != i and dice[j].face().element == f.element:
+				return true
+		return false
+
+	## Armour die `i`'s hit ignores because its element is matched. 0 for every
+	## other die and every unpaired face, so it is a rider on the resolve rather
+	## than a second damage number: the face still deals its own `dmg`, and this
+	## is subtracted from what the enemy's armour does to it.
+	##
+	## Like `pair_bonus` this cannot live on the Face -- only the Encounter can
+	## see the other dice -- and it borrows two of that function's decisions on
+	## purpose. `dmg <= 0` gates it, because a die showing Spark's `spark` face
+	## is not swinging at anything and must not open a window for its partner.
+	## And it is "any other die", not "any other die that is not itself paired",
+	## because the thing that pays here is not this die's damage but the armour
+	## its partner is standing behind -- Fang's `pierce 6` holds regardless of
+	## whose hit it is standing behind.
+	##
+	## `SYNERGY_PIERCE` is added to `Face.pierce` and to the run's PIERCE card in
+	## `resolve_faces`, so all three stack from three separate places and none of
+	## them can see the other. That is the same shape item 7 already has, and the
+	## same reason: read `pierce` alone and this field is dead code that every
+	## test still passes.
+	func synergy_pierce(i: int) -> int:
+		return SYNERGY_PIERCE if tagged(i) else 0
+
 	## What die `i` actually deals before the enemy's armour. One place, because
 	## the number appears four times on the resolve -- the hit, PRECISE_STRIKE's
 	## threshold and a BRACE's "was that a weak hit" test all have to agree about
 	## it, and a paired Fang reads 10 on its card. If they disagreed, a face could
 	## arm an enemy on a card that says it is a heavy hit.
+	##
+	## `synergy_pierce` is deliberately *not* in this sum. This is the number
+	## printed on the card and the one PRECISE_STRIKE thresholds, and an element
+	## on it would have to be paid by the enemy's armour before anything is dealt
+	## -- which the card has nowhere to say, because the card does not know the
+	## enemy's armour. Half a point of damage that needs a second number on the
+	## card is not worth it; a bonus to the bypass is, and it reads on the card as
+	## a higher number rather than as a second one.
 	func face_hit(i: int) -> int:
 		return dice[i].face().dmg + pair_bonus(i)
 
@@ -603,7 +729,7 @@ class Encounter:
 			# two stack without either of them being able to see the other. Reading
 			# `pierce` alone would have made the face's field dead code on both
 			# resolve paths while every test still passed on unarmoured enemies.
-			var through := enemy.pierce(face_hit(i), pierce + f.pierce)
+			var through := enemy.pierce(face_hit(i), pierce_card + f.pierce + synergy_pierce(i))
 			dealt += through
 			last_deflected += maxi(0, face_hit(i) - through)
 			if dice[i].rushed > 0 and rush:
@@ -620,7 +746,7 @@ class Encounter:
 			var hf := dice[banked].face()
 			blk += hf.block
 			gained += hf.rerolls
-			var cashed_through := enemy.pierce(face_hit(banked), pierce + hf.pierce)
+			var cashed_through := enemy.pierce(face_hit(banked), pierce_card + hf.pierce + synergy_pierce(banked))
 			dealt += cashed_through
 			last_deflected += maxi(0, face_hit(banked) - cashed_through)
 			hardest = maxi(hardest, face_hit(banked))
@@ -1175,6 +1301,7 @@ static func _focus_tests() -> void:
 	_bank_budget_tests()
 	_pair_tests()
 	_pierce_tests()
+	_synergy_tests()
 	_focus_gap_tests()
 
 
@@ -1697,7 +1824,7 @@ static func _pierce_tests() -> void:
 	# Stackable with the run's PIERCE and not shadowed by it. A run holding both
 	# must not see one of them, and the two live on different objects on purpose.
 	var stacked := Encounter.new(Enemy.new("T", 40, 8, 0), [fang.copy()])
-	stacked.pierce = 3
+	stacked.pierce_card = 3
 	stacked.dice[0].up = 5
 	stacked.enemy.hp = 40
 	stacked.resolve_faces()
@@ -1740,6 +1867,162 @@ static func _pierce_tests() -> void:
 		for f in d.faces:
 			starters += 1 if f.pierce > 0 else 0
 	Check.check(starters == 0, "and no starter die carries a piercing face")
+
+
+## Item 9. Two dice showing the same element ignore armour together.
+##
+## Same two rules as `_pierce_tests`: every case that can pay runs the *resolve*
+## and reads enemy hp, because a field threaded nowhere reads as a working flag.
+## This one has three such sites to thread -- the per-die loop, the banked
+## cash-out, and the BEST HIT preview in `fight.gd` -- and each of them has its
+## own case below.
+static func _synergy_tests() -> void:
+	var lib := Encounter.library()
+	var bonus := Encounter.bonus_dice()
+	var sunder: Die = lib[1]
+	var spark: Die = bonus[1]
+	var fang: Die = bonus[2]
+
+	# The tags are where the design says they are. Named rather than counted,
+	# because "exactly three faces carry an element" would still pass on a build
+	# that moved all three onto one die, where no two could ever be in the same
+	# hand and the mechanic could never fire at all.
+	Check.check(sunder.faces[2].element == Encounter.E_REND, "Sunder's cleave is REND")
+	Check.check(spark.faces[5].element == Encounter.E_REND, "Spark's 15 is REND")
+	Check.check(fang.faces[5].element == Encounter.E_GLAZE, "Fang's pierce 6 is GLAZE")
+	var tagged := 0
+	for d in lib + bonus:
+		for f in d.faces:
+			tagged += 1 if f.element != Encounter.E_NONE else 0
+	Check.check(tagged == 3, "and exactly three faces in the whole roster carry an element")
+	var starters := 0
+	for d in lib:
+		for f in d.faces:
+			starters += 1 if f.element != Encounter.E_NONE else 0
+	Check.check(starters == 1,
+		"and exactly one starter does -- enough that a run meets the mechanic, not enough that every fight does")
+
+	# A zero-damage face cannot open the window. Spark carries `spark` twice, so
+	# without this `tagged` would find its own partner on the same die and fire on
+	# a face that is dealing nothing. This is the `dmg <= 0` gate in the rule.
+	var silent := Encounter.new(Encounter.grunt(), [spark.copy()])
+	silent.dice[0].up = 0  ## spark, 0 damage, and REND-shaped by label alone
+	Check.check(not silent.tagged(0), "a 0-damage face pairs with nothing, itself included")
+
+	# The payout is armour bypass and nothing else, and the two are told apart by
+	# the arithmetic rather than by the label. Sunder `cleave` is 12 at armour 8:
+	# 4 alone, and 6 matched -- which is also what a flat +2 on damage would pay,
+	# which is the BLEED shape and the reason this one check is not enough. Put
+	# the partner on the board and they separate: the bypass pays 15 (6 and 9, the
+	# 2 taken off each face separately), a flat +2 pays 13 (6 and 7, the 2 folded
+	# into one number before armour ever saw it). Unarmoured settles it again --
+	# 27 is both faces at face value, where a flat +2 would read 29.
+	var landed := func(armour: int, partner: bool) -> int:
+		var hand: Array[Die] = [sunder.copy()]
+		if partner:
+			hand.append(spark.copy())
+		var e := Encounter.new(Enemy.new("T", 40, armour, 0), hand)
+		e.dice[0].up = 2  ## cleave, REND
+		if partner:
+			e.dice[1].up = 5  ## 15, REND
+		e.enemy.hp = 40
+		e.resolve_faces()
+		return 40 - e.enemy.hp
+	Check.check(landed.call(8, false) == 4, "armour 8 alone: cleave lands 12 - 8 = 4")
+	Check.check(landed.call(8, true) == (12 - 6) + (15 - 6),
+		"and matched the pair pays both faces through: 6 + 9 = 15, not the 13 a flat +2 gives")
+	Check.check(landed.call(0, false) == 12, "unarmoured: cleave deals its 12")
+	Check.check(landed.call(0, true) == 12 + 15,
+		"and matched it deals 27, not 29 -- the bonus is inert where there is no armour")
+
+	# Both tagged dice pay, which is the part that makes the card legible: neither
+	# die is "the one that needs the other", so the player reads a rule off the
+	# board rather than a pairing table. Both tags are on one armoured enemy here,
+	# so the two bonuses have to be visible separately.
+	var both := Encounter.new(Enemy.new("T", 60, 8, 0), [sunder.copy(), spark.copy(), fang.copy()])
+	both.dice[0].up = 2  ## cleave, REND
+	both.dice[1].up = 5  ## 15, REND
+	both.dice[2].up = 5  ## pierce 6, GLAZE
+	Check.check(both.synergy_pierce(0) == Encounter.SYNERGY_PIERCE, "the REND die earns the pair bonus")
+	Check.check(both.synergy_pierce(1) == Encounter.SYNERGY_PIERCE, "and so does its partner")
+	Check.check(both.synergy_pierce(2) == 0, "a lone GLAZE earns nothing: one tag is not a pair")
+	both.enemy.hp = 60
+	both.resolve_faces()
+	# 6 + 9 from the pair, and 13 from Fang: its own pierce 6 pays the last 2 of
+	# the armour, so 15 - 2. The pair's 2 was never in that one -- which is the
+	# point, and the reason the check reads a total rather than a flag.
+	Check.check(60 - both.enemy.hp == (12 - 6) + (15 - 6) + (15 - 2),
+		"three faces, two pairs, and the arithmetic is per face (flag-only tests miss this)")
+
+	# A held partner and a spent partner, because the sentence at `tagged` claims
+	# both and the hold is a decision about what is on the board rather than about
+	# what resolves. Same argument as the matching case in `_pair_tests`: adding
+	# `if dice[j].spent: continue` would read as a tidy-up and retire the claim
+	# while every other check here still passed.
+	var held := Encounter.new(Encounter.grunt(), [sunder.copy(), spark.copy()])
+	held.dice[0].up = 2
+	held.dice[1].up = 5
+	Check.check(held.toggle_bank(1), "the tagged die can be held")
+	Check.check(held.tagged(0), "a held die still pairs -- it is on the board")
+	var used := Encounter.new(Encounter.grunt(), [sunder.copy(), spark.copy()])
+	used.dice[0].up = 2
+	used.dice[1].up = 5
+	used.dice[1].spent = true
+	Check.check(used.tagged(0), "a spent partner still pairs -- it paid this turn")
+
+	# The banked cash-out, which is a second call site of the rule and the one an
+	# edit to the per-die loop alone would miss. A rule threaded onto the loop only
+	# is the half-implementation this suite exists to catch, and `pierce_card` is
+	# named in that sentence because the run's card and this rider are both added
+	# at both sites: three sources that cannot see each other.
+	#
+	# One resolve, both call sites, which is why this is the case rather than a
+	# second one on the loop: the held die is skipped by the loop (`i == banked`
+	# continues) and pays at the cash-out, so Spark's 15 is paid by the first site
+	# and Sunder's cleave by the second. Unthreaded, the pair pays neither and this
+	# total is 7 + 4 = 11; the difference between that and 15 is the rule at both
+	# ends, in one number.
+	var banked := Encounter.new(Enemy.new("T", 40, 8, 0), [sunder.copy(), spark.copy()])
+	banked.dice[0].up = 2
+	banked.dice[1].up = 5
+	Check.check(banked.toggle_bank(0), "the tagged die can be held")
+	banked.bank_carried = true  ## the cash is owed to the next roll
+	banked.enemy.hp = 40
+	banked.resolve_faces()
+	Check.check(banked.banked == -1, "the hold was cashed")
+	Check.check(40 - banked.enemy.hp == (15 - 6) + (12 - 6),
+		"and both call sites paid through: 9 from the loop, 6 from the cash-out")
+
+	# Not folded into `face_hit`. That number feeds `hardest`, so PRECISE_STRIKE
+	# would see a pair as a bigger hit than the card prints, and feeds `low`, so
+	# BRACE would count it. The card has nowhere to show a second number, because
+	# the card does not know the enemy's armour -- which is the whole reason the
+	# payout is armour bypass.
+	#
+	# The claim is asserted on `face_hit` directly and not on `enemy.exposed`,
+	# which is the threshold reading it, because no board can ask it that way:
+	# every tagged face is 12 or more and EXPOSE_AT is 10, so cleave exposes
+	# whether or not a partner is standing next to it. A check here that read
+	# `exposed` would pass either way -- a check that cannot fail is the same
+	# dead weight as a flag threaded nowhere, which is what this file is against.
+	# `hardest` is fed `face_hit` and nothing else, so the number on the card is
+	# the number the threshold sees.
+	var prec := Encounter.new(Encounter.grunt(), [sunder.copy(), spark.copy()])
+	prec.precision = true
+	prec.dice[0].up = 2
+	prec.dice[1].up = 5
+	Check.check(prec.face_hit(0) == 12, "a paired cleave still reads 12 on its card")
+	Check.check(prec.face_hit(1) == 15, "and its partner still reads 15 -- neither is the one that needs the other")
+	Check.check(prec.synergy_pierce(0) == Encounter.SYNERGY_PIERCE, "the bonus is on the pierce, not the face")
+
+	# And it moves with the board, which is what makes it a decision: break the
+	# pair by re-rolling the partner away and the same face pays less.
+	var breakable := Encounter.new(Enemy.new("T", 40, 8, 0), [sunder.copy(), spark.copy()])
+	breakable.dice[0].up = 2
+	breakable.dice[1].up = 5
+	Check.check(breakable.tagged(0), "paired to start")
+	breakable.dice[1].up = 4  ## Spark's 9, untagged
+	Check.check(not breakable.tagged(0), "and unpaired the moment the partner moves")
 
 
 ## Banking: hold one die a turn. The property that makes it a hold rather than a

@@ -138,7 +138,7 @@ Bank. So it is not a sound about dice at all; it is the interface's click, and
 it marks *any* change of mode. That is the right design — one tick for "you have
 switched something" — and the old row made it read as a semantic die sound,
 which is the opposite. `block` also sounds on a Focus spend —
-`_sfx("block", 2.0)` at `fight.gd:580` — which is coherent, since a Focus charge
+`_sfx("block", 2.0)` at `fight.gd:584` — which is coherent, since a Focus charge
 converts to block, but it is not "a roll that gained block".
 
 Neither was caught by reading, and neither is a typo: both rows were true of one
@@ -230,14 +230,14 @@ wrong monster in it is worse than an obviously broken one, because it survives a
 skim.
 
 Three findings make this provable rather than suspected. First, none of it can be
-assembled at runtime: every button assigns its label verbatim — `b.text = text` at `theme.gd:144` and `fight.gd:421` — so `END TURN` is not `End turn` uppercased
+assembled at runtime: every button assigns its label verbatim — `b.text = text` at `theme.gd:144` and `fight.gd:423` — so `END TURN` is not `End turn` uppercased
 and `TAP TO ROLL` is not `Roll`. `F_DISPLAY` (`theme.gd:36`) is a font *size*, not a
 case transform. Every label is a literal, and these literals are absent; the
 case-insensitive hits that do exist are prose, e.g. `shot.gd:405` is
 `_ergonomics(game, "run over")`, a check name on the check that proves the real
 run-over screen is still reachable. Second, the shapes are wrong too, not just the
 words: the fight screen's button row is `Roll`, `Focus`, `Bank`, `Re-roll`, `End
-turn` — five across, opening at `roll_btn = _mk_button(btns, "Roll", T.GOLD)` at `fight.gd:320` — where `02` and `08` each show two; the
+turn` — five across, opening at `roll_btn = _mk_button(btns, "Roll", T.GOLD)` at `fight.gd:323` — where `02` and `08` each show two; the
 re-roll widens to `Re-roll (%d)` (`fight.gd:1163`), never `REROLL 1`; and the status
 line is `block %d     re-rolls %d     focus %d     turn %d` (`fight.gd:1130`), not
 `FIGHT 1` or `DEATH ROLL`. Third, the timing rules out "an older render of a screen
@@ -559,7 +559,7 @@ change, not its size.
 repaired.** "You are not managing a timer or a stat bar" made the same promise
 this file's own upgrades paragraph had already withdrawn — MEND heals 14, VIGOR
 grants +8 max health — thirty lines below the correction, on a screen carrying
-two `ProgressBar`s (`enemy_bar` at `fight.gd:243`, `player_bar` at `:298`).
+two `ProgressBar`s (`enemy_bar` at `fight.gd:246`, `player_bar` at `:298`).
 `_store_copy` should have stopped it and did not, because it asserted
 `"not a stat bar" not in text` and this sentence reads *"not managing a timer **or
 a stat bar**"* — the substring is simply absent. Re-anchored on the noun.

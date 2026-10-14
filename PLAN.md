@@ -105,7 +105,7 @@ This plan puts **Phase 0: The Decision Space** at the very front.
 > |---|---|---|
 > | Vulnerable / Exposed | `enemy.exposed`, damage `× 3 / 2` | `dice.gd:198-201` |
 > | Sundered / Bleed | **nothing at all** | — |
-> | Reactive Enemies | `BEH_BRACE` at `< 6`, not `< 4` | `dice.gd:155`, `:165` |
+> | Reactive Enemies | `BEH_BRACE` at `< 6`, not `< 4` | `dice.gd:183`, `:193` |
 >
 > **Sundered / Bleed does not exist under any name.** Searched for `bleed`,
 > `sunder`, `poison`, `burn`, `wound`, `dot`, `over time` and `overtime` across
@@ -128,7 +128,7 @@ This plan puts **Phase 0: The Decision Space** at the very front.
 > number.
 >
 > **The threshold is `6`, and it is judged on the face rather than on what
-> survived armour.** `REACT_LOW := 6` (`dice.gd:165`) is tested against
+> survived armour.** `REACT_LOW := 6` (`dice.gd:183`) is tested against
 > `face_hit` in both the normal path (`:574`) and the held die's cash (`:591`).
 > The face reading is deliberate and is the thing that makes it playable: a
 > `cleave 12` reads as 12 on the card and counts as 12, because a reactive rule
@@ -1984,7 +1984,7 @@ godot --headless --path . -s _pack.gd -- Android
 > The label is what makes it a finding rather than a tint: `name_labels[i]` is
 > assigned once and never recoloured, while `effect_labels[i]` three lines below
 > it is recoloured per state —
-> `effect_labels[i].add_theme_color_override("font_color",` at `fight.gd:882`
+> `effect_labels[i].add_theme_color_override("font_color",` at `fight.gd:902`
 > The die's *name* is its identity across a run, so it is the one string that
 > must stay readable through every state — and it is the one string with no
 > per-state path.
@@ -2481,7 +2481,7 @@ godot --headless --path . -s _pack.gd -- Android
 > grants +8 max health — and it was fixed and gated. What survived is "You are
 > not managing a timer or a stat bar", thirty lines below it, making the same
 > promise in the same block, on a screen that carries **two** `ProgressBar`s
-> (`enemy_bar` at `fight.gd:243`, `player_bar` at `:298`) and a player's health
+> (`enemy_bar` at `fight.gd:246`, `player_bar` at `:298`) and a player's health
 > that two of the twelve cards move.
 >
 > **The check that was supposed to stop it tested the phrase, not the claim.**
@@ -2497,7 +2497,7 @@ godot --headless --path . -s _pack.gd -- Android
 >
 > Copy now reads "No timer, and nothing to grind: you are reading four numbers
 > and choosing which one to bet. Health is the one number that ends the run" —
-> true (`if hp <= 0:` at `dice.gd:723`), and it keeps the four counters
+> true (`if hp <= 0:` at `dice.gd:849`), and it keeps the four counters
 > the HUD actually prints while conceding the one bar the game really has.
 >
 > **How it was found, since the method is the transferable part:** not by

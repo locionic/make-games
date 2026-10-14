@@ -161,7 +161,7 @@ func enemy_for(d: int) -> Rules.Enemy:
 ## Build a fresh encounter for the current depth, carrying the run's stats in.
 func start_fight() -> Rules.Encounter:
 	var enc := Rules.Encounter.new(enemy_for(depth), dice, hp, max_hp)
-	enc.pierce = pierce
+	enc.pierce_card = pierce
 	enc.thorns = thorns
 	enc.base_rerolls = base_rerolls
 	enc.base_focus = base_focus
@@ -250,7 +250,7 @@ const UPGRADES := [
 	{"id": "BULWARK", "name": "Bulwark", "desc": "Reflect 4 damage when hit. A full block stops it."},
 	# "for one turn" is not a restatement, it is the whole mechanic. The window is
 	# opened by the resolve that earns it and spent by the next one
-	# (`dice.gd:657` decrements it, `enemy.exposed = 1` at `dice.gd:662` sets it
+	# (`dice.gd:783` decrements it, `enemy.exposed = 1` at `dice.gd:788` sets it
 	# again), so the copy that said only "leaves it exposed" described a permanent
 	# debuff the code does not grant. Same shape as ADD_DIE's wild die: a card
 	# promising something the rules do not do.
@@ -786,7 +786,7 @@ static func self_test() -> void:
 	# start_fight carries the run's stats into the encounter.
 	var f0 := r.start_fight()
 	Check.check(f0.enemy.title == "Grunt")
-	Check.check(f0.pierce == r.pierce and f0.thorns == r.thorns)
+	Check.check(f0.pierce_card == r.pierce and f0.thorns == r.thorns)
 	Check.check(f0.base_rerolls == r.base_rerolls)
 	Check.check(f0.base_focus == r.base_focus)
 	# ...and the card's flag has to be carried with them. Every Exposed test in

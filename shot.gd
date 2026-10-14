@@ -696,13 +696,13 @@ func _run() -> void:
 	# Blade can show -- so the branch is unreachable there by construction, not
 	# by luck. Sunder reaches 14. This is therefore a second resolve on the same
 	# panel, and `precision` -- the PRECISE_STRIKE card, the only thing that ever
-	# opens the window (dice.gd:662) -- is what makes the 10+ mean anything.
+	# opens the window (dice.gd:788) -- is what makes the 10+ mean anything.
 	#
 	# It runs after the grab and after the shake rather than inside the fixture,
 	# because both of those are about *that* resolve, and adding a resolve above
 	# them would change which one they are describing. It cannot disturb the
 	# arithmetic further up either: exposure is set after the damage is paid
-	# (dice.gd:662), so `dealt` and `last_deflected` are untouched -- and they
+	# (dice.gd:788), so `dealt` and `last_deflected` are untouched -- and they
 	# are not re-read here, this section is after the screenshot on purpose.
 	#
 	# Rolled, then pinned. `Die.roll` assigns `up` itself (dice.gd:113), so a pin

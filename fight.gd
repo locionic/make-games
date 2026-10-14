@@ -882,7 +882,21 @@ func _paint_card(i: int, f: Rules.Face, final: bool) -> void:
 	# label is never a word, whatever it agrees with: SHARPEN and REFORGE raise
 	# a face's damage without touching its name, so it would agree by accident
 	# and disagree the moment either card was taken.
-	effect_labels[i].text = face_word(f.label, kind, value)
+	var word := face_word(f.label, kind, value)
+	# A paired element rides on the same line, and there is exactly one line, so
+	# something has to give. The face's own name is what makes a face legible, so
+	# the rider goes on when the name is a plain number -- there is nothing to lose
+	# but a repeat of the number already shown big. Everything else leaves the
+	# card alone: a labelled face keeps its word, and the pair is still legible
+	# because both of its dice change colour together in gold.
+	#
+	# `final and target == null` for the same reason `hit` has it: mid-spin and
+	# under Focus the face is not a settled one, and a stranger is not standing
+	# next to it yet. Held dice keep their rider -- the pair is on the board while
+	# it is being decided, which is when the player is reading the card for it.
+	if final and target == null and enc.synergy_pierce(i) > 0 and f.label.is_valid_int():
+		word += "  +%d PIERCE" % Rules.Encounter.SYNERGY_PIERCE
+	effect_labels[i].text = word
 	if held:
 		effect_labels[i].text = "HELD"
 	effect_labels[i].add_theme_color_override("font_color",
@@ -1142,13 +1156,22 @@ func _refresh() -> void:
 	# here, and re-rolling one of them into a 9 is the fight.
 	var best := 0
 	var raw := 0
-	for d in enc.dice:
-		var df: Rules.Face = d.face()
+	for i in enc.dice.size():
+		var df: Rules.Face = enc.dice[i].face()
 		raw = maxi(raw, df.dmg)
-		# The face's own pierce rides here too, or BEST HIT would under-report a
-		# pierced Fang by up to 6 while the resolve deals it -- the preview and the
-		# number that actually lands are not allowed to disagree.
-		best = maxi(best, enc.enemy.pierce(df.dmg, enc.pierce + df.pierce))
+		# `face_hit` rather than `df.dmg`, for the same reason the resolve uses it:
+		# a paired face reads its doubled number on the card, and this preview has
+		# to be that card's arithmetic.
+		#
+		# The face's own pierce rides here too, and now the paired-element one
+		# beside it -- all three sources, none of which can see the other. Dropping
+		# `synergy_pierce` here is the failure that leaves the number the preview
+		# promises 2 short of what the resolve deals, on exactly the turn the player
+		# read the preview to decide whether to commit, which is the whole value of
+		# the readout.
+		best = maxi(best, enc.enemy.pierce(
+			enc.face_hit(i), enc.pierce_card + df.pierce + enc.synergy_pierce(i)
+		))
 	best_num.text = str(best)
 	best_num.add_theme_color_override("font_color", T.DMG if best > 0 else T.FAINT)
 	# At zero the number alone is ambiguous -- it reads as "you did nothing this
