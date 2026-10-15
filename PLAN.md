@@ -1984,7 +1984,7 @@ godot --headless --path . -s _pack.gd -- Android
 > The label is what makes it a finding rather than a tint: `name_labels[i]` is
 > assigned once and never recoloured, while `effect_labels[i]` three lines below
 > it is recoloured per state —
-> `effect_labels[i].add_theme_color_override("font_color",` at `fight.gd:882`
+> `effect_labels[i].add_theme_color_override("font_color",` at `fight.gd:888`
 > The die's *name* is its identity across a run, so it is the one string that
 > must stay readable through every state — and it is the one string with no
 > per-state path.
@@ -2481,7 +2481,7 @@ godot --headless --path . -s _pack.gd -- Android
 > grants +8 max health — and it was fixed and gated. What survived is "You are
 > not managing a timer or a stat bar", thirty lines below it, making the same
 > promise in the same block, on a screen that carries **two** `ProgressBar`s
-> (`enemy_bar` at `fight.gd:243`, `player_bar` at `:298`) and a player's health
+> (`enemy_bar` at `fight.gd:246`, `player_bar` at `:298`) and a player's health
 > that two of the twelve cards move.
 >
 > **The check that was supposed to stop it tested the phrase, not the claim.**
