@@ -250,7 +250,7 @@ const UPGRADES := [
 	{"id": "BULWARK", "name": "Bulwark", "desc": "Reflect 4 damage when hit. A full block stops it."},
 	# "for one turn" is not a restatement, it is the whole mechanic. The window is
 	# opened by the resolve that earns it and spent by the next one
-	# (`dice.gd:657` decrements it, `enemy.exposed = 1` at `dice.gd:662` sets it
+	# (`dice.gd:598` decrements it, `enemy.exposed = 1` at `dice.gd:686` sets it
 	# again), so the copy that said only "leaves it exposed" described a permanent
 	# debuff the code does not grant. Same shape as ADD_DIE's wild die: a card
 	# promising something the rules do not do.

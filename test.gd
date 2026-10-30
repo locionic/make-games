@@ -83,7 +83,7 @@ func _init() -> void:
 	# anything to be counted. Both are still safe in the one direction a floor
 	# cares about -- deleting a citation drops the count, the gate goes red and
 	# names the shortfall -- and it is why this is re-stamped rather than raised.
-	quit(Check.report("test.gd", 9042))
+	quit(Check.report("test.gd", 9062))
 
 
 ## PLAN.md 3.2b's haptics, which no gate in this repo can execute. `_haptic` is

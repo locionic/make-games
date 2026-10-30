@@ -91,6 +91,10 @@ class Face:
 	func worth() -> int:
 		return dmg + block + rerolls * 3
 
+	## Element this face belongs to: 0 = none, 1-4 for fire/water/air/earth.
+	## On triples or higher matches, provides additional synergistic damage.
+	var element: int = 0
+
 
 class Die:
 	var title: String
@@ -294,6 +298,8 @@ class Encounter:
 	## Set by GAMBLERS_RUSH: a re-roll that lands higher adds half of what it
 	## gained, ignoring armour.
 	var rush: bool = false
+	## Set by ELEMENTAL: when true, element matches grant synergistic damage.
+	var elemental: bool = false
 	## Half, floored at 1. A flat bonus was measured first and is the reason this
 	## is not one: a flat 3 paid out identically for Sunder's `1` to `cleave 12`
 	## as for Blade's 4 to 5, which makes it a tax on rolling at all rather than
@@ -365,8 +371,8 @@ class Encounter:
 			Face.new("1", 1, 0, 0), Face.new("2", 2, 0, 0), Face.new("3", 3, 0, 0),
 			Face.new("4", 4, 0, 1), Face.new("5", 5, 0, 1), Face.new("6", 6, 0, 1),
 		]))
+		out[0].faces[5].element = 2  # water element: Blade 9 for triple synergy
 		return out
-
 	# Extra dice the ADD_DIE upgrade can grant -- swingier than the starters.
 	static func bonus_dice() -> Array[Die]:
 		var out: Array[Die] = []
@@ -389,9 +395,11 @@ class Encounter:
 		# which is a flat power add with extra steps: 22 is over every armour in the
 		# roster and over the boss.
 		out[2].faces[2].pairs = true
+		out[2].faces[2].element = 1  # fire element for elemental synergy
 		# And the `pierce 6`, the face item 7 re-sized. See `Face.pierce` for why
 		# it is 15 and not 18, and for the `min(armour, 6) - 3` that decides it.
 		out[2].faces[5].pierce = 6
+		out[2].faces[5].element = 2  # water element for elemental synergy
 		return out
 
 	func _picked() -> int:
@@ -417,13 +425,29 @@ class Encounter:
 				return f.dmg
 		return 0
 
+	## Extra damage die `i` deals when its element matches two or more other dice.
+	## Counts all dice in the encounter (held, spent, and on the board) that
+	## share the same element and have a valid damage value. On a triple match,
+	## returns the base damage; on higher matches, returns base + (count - 2).
+	func elemental_pair_bonus(i: int) -> int:
+		var f := dice[i].face()
+		if f.element <= 0 or not elemental or f.dmg <= 0:
+			return 0
+		var matches := 0
+		for j in dice.size():
+			if j != i and dice[j].face().element == f.element and dice[j].face().dmg > 0:
+				matches += 1
+		if matches < 2:
+			return 0
+		return f.dmg + (matches - 2)
+
 	## What die `i` actually deals before the enemy's armour. One place, because
 	## the number appears four times on the resolve -- the hit, PRECISE_STRIKE's
 	## threshold and a BRACE's "was that a weak hit" test all have to agree about
 	## it, and a paired Fang reads 10 on its card. If they disagreed, a face could
 	## arm an enemy on a card that says it is a heavy hit.
 	func face_hit(i: int) -> int:
-		return dice[i].face().dmg + pair_bonus(i)
+		return dice[i].face().dmg + pair_bonus(i) + elemental_pair_bonus(i)
 
 	func can_reroll() -> bool:
 		return rerolls_left > 0 and _picked() > 0
@@ -1174,6 +1198,7 @@ static func _focus_tests() -> void:
 	_bastion_tests()
 	_bank_budget_tests()
 	_pair_tests()
+	_elemental_tests()
 	_pierce_tests()
 	_focus_gap_tests()
 
@@ -1655,6 +1680,77 @@ static func _pair_tests() -> void:
 	Check.check(breakable.pair_bonus(0) > 0, "paired to start")
 	breakable.dice[1].up = 4  ## Blade 7
 	Check.check(breakable.pair_bonus(0) == 0, "and unpaired the moment the partner moves")
+
+
+## Elemental synergy: matching elements grant extra damage in ELEMENTAL encounters.
+##
+## The `element` property is set on three faces: Blade 9 (water/2), Fang 5 (fire/1),
+## and Fang pierce 6 (water/2). Element matches are tested by comparing the bonus
+## dice' faces against the library's water face.
+static func _elemental_tests() -> void:
+	# Blade 9 is water, Fang 5 is fire, Fang pierce 6 is water.
+	var blade: Die = Encounter.library()[0]
+	Check.check(blade.faces[5].element == 2, "Blade's 9 is water element")
+	Check.check(blade.faces[5].dmg == 9, "and it is the 9, not something else")
+
+	var fang: Die = Encounter.bonus_dice()[2]
+	Check.check(fang.faces[2].element == 1, "Fang's 5 is fire element")
+	Check.check(fang.faces[5].element == 2, "Fang pierce 6 is water element")
+	Check.check(fang.faces[5].pierce == 6, "and it has pierce 6")
+
+	# Elemental only grants bonus on 2+ matching elements.
+	# A lone water die has no partner.
+	var lone := Encounter.new(Encounter.grunt(), [blade.copy()])
+	lone.elemental = true
+	lone.dice[0].up = 5  # Blade 9 (water)
+	Check.check(lone.elemental_pair_bonus(0) == 0, "lone water: matches=0, no bonus")
+	Check.check(lone.dice[0].face().dmg == 9, "base damage stays 9")
+
+	# A pair of water dice: each sees 1 match, which is < 2, so no elemental bonus yet.
+	var pair := Encounter.new(Encounter.grunt(), [blade.copy(), fang.copy()])
+	pair.elemental = true
+	pair.dice[0].up = 5   # Blade 9 (water)
+	pair.dice[1].up = 5   # Fang pierce 6 (water)
+	Check.check(pair.elemental_pair_bonus(0) == 0, "water pair: matches=1, no bonus (need 2)")
+	Check.check(pair.elemental_pair_bonus(1) == 0, "same for second water die")
+
+	# Test with a custom die that we can control the element on.
+	# Use Spark (damage: 4,6,9,15) to add a third water die for triple match.
+	# faces[2] = 4, faces[3] = 6, faces[4] = 9, faces[5] = 15
+	var custom: Die = Encounter.bonus_dice()[1]  # Spark
+	custom.faces[3].element = 2  # Make Spark 6 water
+	var triple := Encounter.new(Encounter.grunt(), [blade.copy(), fang.copy(), custom])
+	triple.elemental = true
+	triple.dice[0].up = 5   # Blade 9 (water)
+	triple.dice[1].up = 5   # Fang pierce 6 (water)
+	triple.dice[2].up = 3   # Spark 6 (water)
+	# Triple: each die sees 2 matches, bonus = dmg + 0 = base damage
+	Check.check(triple.elemental_pair_bonus(0) == 9, "triple water: Blade 9 bonus = 9 (base)")
+	Check.check(triple.elemental_pair_bonus(1) == 15, "triple water: Fang 15 bonus = 15 (base)")
+	Check.check(triple.elemental_pair_bonus(2) == 6, "triple water: Spark 6 bonus = 6 (base)")
+	# Total: 9+15+6 base + 9+15+6 elemental = 60, no armour to reduce
+	triple.enemy.hp = 62
+	triple.resolve_faces()
+	Check.check(triple.enemy.hp == 2, "triple water resolve: 60 dmg to 62 hp = 2 remaining")
+
+	# Quadruple match: 4 dice same element, each sees 3 matches, bonus = dmg + 1.
+	var custom2: Die = Encounter.bonus_dice()[2]  # Fang
+	custom2.faces[2].element = 2  # Make Fang 5 water too
+	var quad := Encounter.new(Encounter.grunt(), [blade.copy(), fang.copy(), custom.copy(), custom2.copy()])
+	quad.elemental = true
+	quad.dice[0].up = 5   # Blade 9 (water, dmg=9)
+	quad.dice[1].up = 5   # Fang pierce 6 (water, dmg=15)
+	quad.dice[2].up = 3   # Spark 6 (water, dmg=6)
+	quad.dice[3].up = 2   # Fang 5 (water, dmg=5)
+	# Quad: each die sees 3 matches, bonus = dmg + 1
+	Check.check(quad.elemental_pair_bonus(0) == 10, "quad water: Blade 9 bonus = 10 (9 + 1)")
+	Check.check(quad.elemental_pair_bonus(1) == 16, "quad water: Fang 15 bonus = 16 (15 + 1)")
+	Check.check(quad.elemental_pair_bonus(2) == 7, "quad water: Spark 6 bonus = 7 (6 + 1)")
+	Check.check(quad.elemental_pair_bonus(3) == 6, "quad water: Fang 5 bonus = 6 (5 + 1)")
+	# Total: base = 9+15+6+5 = 35, elemental = 10+16+7+6 = 39, sum = 74, no armour
+	quad.enemy.hp = 76
+	quad.resolve_faces()
+	Check.check(quad.enemy.hp == 2, "quad water resolve: 74 dmg to 76 hp = 2 remaining")
 
 
 ## A face that ignores armour. Item 7, the retry of item 5.
